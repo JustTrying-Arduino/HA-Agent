@@ -26,7 +26,7 @@ options:
   groq_api_key: ""
   brave_api_key: ""
   telegram_bot_token: ""
-  telegram_allowed_chat_ids: []
+  telegram_allowed_chat_ids: ""
   session_timeout_hours: 48
   max_session_messages: 15
   log_level: "info"
@@ -38,8 +38,7 @@ schema:
   groq_api_key: str?
   brave_api_key: str?
   telegram_bot_token: str
-  telegram_allowed_chat_ids:
-    - int
+  telegram_allowed_chat_ids: str
   session_timeout_hours: int
   max_session_messages: int
   log_level: list(debug|info|warning|error)

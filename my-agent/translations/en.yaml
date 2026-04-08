@@ -19,7 +19,7 @@ configuration:
     description: Bot token from @BotFather on Telegram
   telegram_allowed_chat_ids:
     name: Allowed Telegram Chat IDs
-    description: List of Telegram chat IDs authorized to interact with the agent
+    description: Comma-separated Telegram chat IDs authorized to interact with the agent (e.g. 123456789,987654321)
   session_timeout_hours:
     name: Session Timeout (hours)
     description: Archive session after this many hours of inactivity
