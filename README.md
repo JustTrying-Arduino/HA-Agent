@@ -84,15 +84,16 @@ Les tâches planifiées sont des fichiers JSON dans `workspace/cron/`. Au démar
 
 ## Installation
 
-1. Ajouter ce dépôt comme add-on local dans Home Assistant
-2. Installer l'add-on "My Agent"
-3. Configurer les options :
+1. Dans Home Assistant, aller dans **Paramètres → Modules complémentaires → Boutique des modules complémentaires**
+2. Menu ⋮ en haut à droite → **Dépôts** → ajouter l'URL : `https://github.com/JustTrying-Arduino/HA-Agent`
+3. Rafraîchir la page, chercher "My Agent" et l'installer
+4. Configurer les options :
    - `openai_api_key` (obligatoire)
    - `telegram_bot_token` (obligatoire — créer via [@BotFather](https://t.me/BotFather))
    - `telegram_allowed_chat_ids` (obligatoire — votre chat ID Telegram)
    - `groq_api_key` (optionnel — pour les messages vocaux)
    - `brave_api_key` (optionnel — pour la recherche web)
-4. Démarrer l'add-on
+5. Démarrer l'add-on
 
 Le dashboard est accessible via le panneau latéral de l'add-on dans HA.
 
