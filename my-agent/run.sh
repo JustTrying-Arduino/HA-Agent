@@ -33,6 +33,7 @@ get_option() {
 # ============================================================
 
 WORKSPACE="/share/myagent/workspace"
+APP_ROOT="/opt"
 
 # --- Create persistent directories ---
 mkdir -p "${WORKSPACE}/skills"
@@ -51,7 +52,7 @@ for f in "${WORKSPACE}/cron/"*.json; do
     schedule=$(jq -r '.schedule' "$f")
     message=$(jq -r '.message' "$f")
     escaped_message=$(printf '%s' "$message" | sed "s/'/'\\\\''/g")
-    echo "${schedule} python3 -m agent.cron_runner '${escaped_message}'" >> /etc/crontabs/root
+    echo "${schedule} cd ${APP_ROOT} && PYTHONPATH=${APP_ROOT} python3 -m agent.cron_runner '${escaped_message}'" >> /etc/crontabs/root
 done
 
 # Start crond if crontab is non-empty
@@ -71,6 +72,9 @@ export TELEGRAM_ALLOWED_CHAT_IDS="$(get_option 'telegram_allowed_chat_ids')"
 export SESSION_TIMEOUT_HOURS="$(get_option 'session_timeout_hours' '48')"
 export MAX_SESSION_MESSAGES="$(get_option 'max_session_messages' '15')"
 export LOG_LEVEL="$(get_option 'log_level' 'info')"
+export PYTHONPATH="${APP_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+
+cd "${APP_ROOT}"
 
 log_info "Starting My Agent..."
 
