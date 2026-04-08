@@ -11,4 +11,4 @@ COPY workspace/ /usr/local/share/workspace/
 COPY run.sh /
 RUN chmod +x /run.sh
 
-CMD ["/run.sh"]
+ENV PYTHONPATH=/opt
