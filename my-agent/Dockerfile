@@ -12,3 +12,5 @@ COPY run.sh /
 RUN chmod +x /run.sh
 
 ENV PYTHONPATH=/opt
+
+CMD ["/run.sh"]

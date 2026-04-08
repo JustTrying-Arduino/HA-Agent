@@ -1,6 +1,6 @@
 name: "My Agent"
 description: "Minimalist AI agent with Telegram interface and tool execution"
-version: "0.1.5"
+version: "0.1.6"
 slug: "my-agent"
 url: "https://github.com/home-assistant/addons-example"
 
@@ -10,6 +10,7 @@ arch:
 
 startup: application
 boot: auto
+init: false
 
 ingress: true
 ingress_port: 8099
