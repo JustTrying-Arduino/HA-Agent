@@ -13,12 +13,22 @@ from agent.server import start_server
 logger = logging.getLogger(__name__)
 
 
-def main():
-    # Configure logging
+def configure_logging():
     logging.basicConfig(
         level=getattr(logging, cfg.log_level.upper(), logging.INFO),
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
+
+    # Keep addon logs visible while silencing noisy library request logs.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("telegram").setLevel(logging.INFO)
+    logging.getLogger("telegram.ext").setLevel(logging.INFO)
+
+
+def main():
+    # Configure logging
+    configure_logging()
 
     # Init database
     init_db()

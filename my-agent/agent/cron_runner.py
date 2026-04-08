@@ -11,6 +11,18 @@ from agent.loop import run_agent
 logger = logging.getLogger(__name__)
 
 
+def configure_logging():
+    logging.basicConfig(
+        level=getattr(logging, cfg.log_level.upper(), logging.INFO),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("telegram").setLevel(logging.INFO)
+    logging.getLogger("telegram.ext").setLevel(logging.INFO)
+
+
 async def main():
     message = sys.argv[1]
     logger.info("Cron started: %s", message)
@@ -43,8 +55,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=getattr(logging, cfg.log_level.upper(), logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    configure_logging()
     asyncio.run(main())
