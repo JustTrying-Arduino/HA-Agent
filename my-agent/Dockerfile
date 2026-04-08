@@ -10,3 +10,5 @@ COPY agent/ /opt/agent/
 COPY workspace/ /usr/local/share/workspace/
 COPY run.sh /
 RUN chmod +x /run.sh
+
+CMD ["/run.sh"]
