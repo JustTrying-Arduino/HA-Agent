@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Agent — Dashboard</title>
+<style>
+  :root {
+    --bg: #1c1c1e; --surface: #2c2c2e; --border: #3a3a3c;
+    --text: #f5f5f7; --text-dim: #8e8e93; --accent: #0a84ff;
+    --green: #30d158; --orange: #ff9f0a; --red: #ff453a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
+  h1 { font-size: 1.4em; margin-bottom: 20px; }
+  h2 { font-size: 1.1em; margin-bottom: 12px; color: var(--text-dim); }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+  .tab { padding: 8px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; color: var(--text-dim); font-size: 0.9em; }
+  .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .card { background: var(--surface); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .stat-box { background: var(--bg); border-radius: 8px; padding: 12px; }
+  .stat-label { font-size: 0.8em; color: var(--text-dim); }
+  .stat-value { font-size: 1.4em; font-weight: 600; margin-top: 4px; }
+  .stat-value .cached { color: var(--green); font-size: 0.7em; }
+  .stat-cost { color: var(--orange); font-size: 0.9em; margin-top: 2px; }
+
+  .msg { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .msg:last-child { border-bottom: none; }
+  .msg-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .msg-role { font-size: 0.75em; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .msg-role.user { background: var(--accent); color: #fff; }
+  .msg-role.assistant { background: #5856d6; color: #fff; }
+  .msg-time { font-size: 0.75em; color: var(--text-dim); }
+  .msg-content { font-size: 0.9em; white-space: pre-wrap; word-break: break-word; }
+
+  .tool-call { background: var(--bg); border-radius: 8px; padding: 8px 12px; margin: 6px 0; font-size: 0.85em; border-left: 3px solid var(--orange); }
+  .tool-call .name { font-weight: 600; color: var(--orange); }
+  .tool-call .duration { color: var(--text-dim); font-size: 0.8em; }
+  .tool-call .result { color: var(--text-dim); margin-top: 4px; max-height: 80px; overflow: hidden; cursor: pointer; }
+  .tool-call .result.expanded { max-height: none; }
+  .tool-call .fail { border-left-color: var(--red); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+  th { text-align: left; color: var(--text-dim); padding: 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px; border-bottom: 1px solid var(--border); }
+  .success { color: var(--green); }
+  .failure { color: var(--red); }
+
+  .load-more { display: block; width: 100%; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--accent); cursor: pointer; text-align: center; margin-top: 12px; }
+
+  .period-select { margin-bottom: 12px; }
+  select { background: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; }
+
+  #section-stats, #section-messages, #section-tools { display: none; }
+  #section-stats.active, #section-messages.active, #section-tools.active { display: block; }
+</style>
+</head>
+<body>
+<h1>My Agent</h1>
+
+<div class="tabs">
+  <div class="tab active" data-section="stats">Tokens</div>
+  <div class="tab" data-section="messages">Messages</div>
+  <div class="tab" data-section="tools">Tool Calls</div>
+</div>
+
+<!-- TOKENS -->
+<div id="section-stats" class="active">
+  <div class="period-select">
+    <select id="stats-period">
+      <option value="day">Par jour</option>
+      <option value="week">Par semaine</option>
+      <option value="month">Par mois</option>
+    </select>
+  </div>
+  <div id="stats-container"></div>
+</div>
+
+<!-- MESSAGES -->
+<div id="section-messages">
+  <div id="messages-container"></div>
+  <button class="load-more" id="load-more-messages">Charger plus...</button>
+</div>
+
+<!-- TOOL CALLS -->
+<div id="section-tools">
+  <div class="card">
+    <table>
+      <thead><tr><th>Heure</th><th>Tool</th><th>Input</th><th>Status</th><th>Duree</th></tr></thead>
+      <tbody id="tools-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = ".";
+let msgOffset = 0;
+const MSG_LIMIT = 50;
+
+// --- Tabs ---
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll("[id^='section-']").forEach(s => s.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("section-" + tab.dataset.section).classList.add("active");
+  });
+});
+
+// --- Stats ---
+async function loadStats() {
+  const period = document.getElementById("stats-period").value;
+  const resp = await fetch(`${API}/api/stats?period=${period}`);
+  const json = await resp.json();
+  const container = document.getElementById("stats-container");
+
+  if (!json.data.length) {
+    container.innerHTML = '<div class="card"><p style="color:var(--text-dim)">Pas encore de donnees.</p></div>';
+    return;
+  }
+
+  // Aggregate by period (across models)
+  const byPeriod = {};
+  json.data.forEach(d => {
+    if (!byPeriod[d.period]) byPeriod[d.period] = { input: 0, output: 0, cached: 0, cost: 0 };
+    byPeriod[d.period].input += d.input_tokens;
+    byPeriod[d.period].output += d.output_tokens;
+    byPeriod[d.period].cached += d.cached_tokens;
+    byPeriod[d.period].cost += d.estimated_cost;
+  });
+
+  let html = '<div class="stats-grid">';
+  for (const [period, d] of Object.entries(byPeriod)) {
+    html += `<div class="stat-box">
+      <div class="stat-label">${period}</div>
+      <div class="stat-value">${fmt(d.input)} in / ${fmt(d.output)} out</div>
+      <div class="stat-value"><span class="cached">${fmt(d.cached)} cached</span></div>
+      <div class="stat-cost">$${d.cost.toFixed(2)}</div>
+    </div>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function fmt(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(1) + "k";
+  return n.toString();
+}
+
+document.getElementById("stats-period").addEventListener("change", loadStats);
+
+// --- Messages ---
+async function loadMessages(append) {
+  const limit = MSG_LIMIT;
+  const resp = await fetch(`${API}/api/messages?limit=${limit}`);
+  const json = await resp.json();
+  const container = document.getElementById("messages-container");
+
+  if (!append) container.innerHTML = "";
+
+  const toolMap = {};
+  (json.tool_calls || []).forEach(tc => {
+    const key = tc.timestamp.substring(0, 16);
+    if (!toolMap[key]) toolMap[key] = [];
+    toolMap[key].push(tc);
+  });
+
+  let html = "";
+  (json.messages || []).forEach(m => {
+    const time = new Date(m.timestamp).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const roleClass = m.role;
+    const icon = m.role === "user" ? "👤" : "🤖";
+    html += `<div class="msg">
+      <div class="msg-header">
+        <span class="msg-role ${roleClass}">${icon} ${m.role}</span>
+        <span class="msg-time">${time}</span>
+      </div>
+      <div class="msg-content">${escapeHtml(m.content)}</div>`;
+
+    // Attach tool calls near assistant messages
+    if (m.role === "assistant") {
+      const key = m.timestamp.substring(0, 16);
+      const calls = toolMap[key] || [];
+      calls.forEach(tc => {
+        const statusClass = tc.success ? "" : "fail";
+        html += `<div class="tool-call ${statusClass}">
+          <span class="name">🔧 ${tc.tool_name}</span>
+          <span class="duration">${tc.duration_ms}ms</span>
+          <div class="result" onclick="this.classList.toggle('expanded')">${escapeHtml(tc.output_summary || "")}</div>
+        </div>`;
+      });
+    }
+
+    html += `</div>`;
+  });
+
+  container.innerHTML += html || '<p style="color:var(--text-dim)">Pas de messages.</p>';
+}
+
+// --- Tool Calls ---
+async function loadToolCalls() {
+  const resp = await fetch(`${API}/api/tool_calls?limit=50`);
+  const json = await resp.json();
+  const tbody = document.getElementById("tools-tbody");
+
+  if (!json.tool_calls.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-dim)">Pas de tool calls.</td></tr>';
+    return;
+  }
+
+  let html = "";
+  json.tool_calls.forEach(tc => {
+    const time = new Date(tc.timestamp).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const status = tc.success ? '<span class="success">✓</span>' : '<span class="failure">✗</span>';
+    html += `<tr>
+      <td>${time}</td>
+      <td>${tc.tool_name}</td>
+      <td title="${escapeAttr(tc.input_summary || "")}">${truncate(tc.input_summary || "", 60)}</td>
+      <td>${status}</td>
+      <td>${tc.duration_ms}ms</td>
+    </tr>`;
+  });
+  tbody.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function escapeAttr(s) {
+  return s.replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function truncate(s, n) {
+  return s.length > n ? s.substring(0, n) + "..." : s;
+}
+
+// Initial load
+loadStats();
+loadMessages(false);
+loadToolCalls();
+</script>
+</body>
+</html>

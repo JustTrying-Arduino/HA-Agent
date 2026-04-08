@@ -1,0 +1,4 @@
+openai>=1.30
+python-telegram-bot>=21.0
+aiohttp>=3.9
+requests>=2.31

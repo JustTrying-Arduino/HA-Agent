@@ -1,0 +1,31 @@
+configuration:
+  openai_api_key:
+    name: OpenAI API Key
+    description: API key for OpenAI (or compatible provider like OpenRouter, LiteLLM)
+  openai_api_base:
+    name: OpenAI API Base URL
+    description: Base URL for the OpenAI-compatible API
+  openai_model:
+    name: LLM Model
+    description: Model name to use (e.g. gpt-4.1, gpt-4o)
+  groq_api_key:
+    name: Groq API Key
+    description: API key for Groq Whisper (voice message transcription). Leave empty to disable.
+  brave_api_key:
+    name: Brave Search API Key
+    description: API key for Brave Search. Leave empty to disable web search.
+  telegram_bot_token:
+    name: Telegram Bot Token
+    description: Bot token from @BotFather on Telegram
+  telegram_allowed_chat_ids:
+    name: Allowed Telegram Chat IDs
+    description: List of Telegram chat IDs authorized to interact with the agent
+  session_timeout_hours:
+    name: Session Timeout (hours)
+    description: Archive session after this many hours of inactivity
+  max_session_messages:
+    name: Max Session Messages
+    description: Number of recent messages to keep in context
+  log_level:
+    name: Log Level
+    description: Logging verbosity (debug, info, warning, error)
