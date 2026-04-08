@@ -6,6 +6,7 @@ import logging
 
 from agent.config import cfg
 from agent.db import init_db, close as close_db
+from agent.scheduler import run_scheduler
 from agent.telegram import start_bot
 from agent.server import start_server
 
@@ -36,6 +37,7 @@ def main():
     # Import tools to trigger registration
     import agent.tools.exec  # noqa: F401
     import agent.tools.files  # noqa: F401
+    import agent.tools.reminders  # noqa: F401
     if cfg.brave_api_key:
         import agent.tools.web  # noqa: F401
     else:
@@ -68,6 +70,9 @@ async def run_all():
     await app.updater.start_polling()
     logger.info("Telegram bot started (polling)")
 
+    scheduler_task = asyncio.create_task(run_scheduler(app.bot))
+    logger.info("Reminder scheduler started")
+
     # Start web server
     server_task = asyncio.create_task(start_server())
     logger.info("Web dashboard started on port %s", cfg.ingress_port)
@@ -77,10 +82,12 @@ async def run_all():
 
     # Cleanup
     logger.info("Shutting down...")
+    scheduler_task.cancel()
     await app.updater.stop()
     await app.stop()
     await app.shutdown()
     server_task.cancel()
+    await asyncio.gather(scheduler_task, server_task, return_exceptions=True)
     close_db()
     logger.info("Shutdown complete")
 

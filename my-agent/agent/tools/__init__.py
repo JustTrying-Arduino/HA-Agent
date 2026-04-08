@@ -32,15 +32,18 @@ def get_tool_schemas() -> list[dict]:
     return [t["schema"] for t in TOOLS.values()]
 
 
-async def execute_tool(name: str, arguments: dict) -> str:
+async def execute_tool(name: str, arguments: dict, context: dict | None = None) -> str:
     if name not in TOOLS:
         return f"Error: unknown tool '{name}'"
     handler = TOOLS[name]["handler"]
     try:
+        kwargs = dict(arguments)
+        if "_context" in inspect.signature(handler).parameters:
+            kwargs["_context"] = context or {}
         if inspect.iscoroutinefunction(handler):
-            result = await handler(**arguments)
+            result = await handler(**kwargs)
         else:
-            result = await asyncio.to_thread(handler, **arguments)
+            result = await asyncio.to_thread(handler, **kwargs)
         return str(result)
     except Exception as e:
         logger.exception("Tool '%s' failed", name)

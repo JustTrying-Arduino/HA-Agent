@@ -9,6 +9,7 @@ from aiohttp import web
 
 from agent.config import cfg
 from agent import db
+from agent.reminders import list_reminders
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +131,20 @@ async def handle_tool_calls(request: web.Request) -> web.Response:
     return web.json_response({"tool_calls": data})
 
 
+async def handle_reminders(request: web.Request) -> web.Response:
+    status = request.query.get("status")
+    limit = int(request.query.get("limit", "100"))
+    reminders = list_reminders(chat_id=None, status=status, limit=limit)
+    return web.json_response({"reminders": reminders})
+
+
 async def start_server():
     app = web.Application()
     app.router.add_get("/", handle_index)
     app.router.add_get("/api/stats", handle_stats)
     app.router.add_get("/api/messages", handle_messages)
     app.router.add_get("/api/tool_calls", handle_tool_calls)
+    app.router.add_get("/api/reminders", handle_reminders)
 
     runner = web.AppRunner(app)
     await runner.setup()

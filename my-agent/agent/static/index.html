@@ -55,8 +55,13 @@
   .period-select { margin-bottom: 12px; }
   select { background: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 6px; }
 
-  #section-stats, #section-messages, #section-tools { display: none; }
-  #section-stats.active, #section-messages.active, #section-tools.active { display: block; }
+  .status-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75em; font-weight: 600; }
+  .status-pill.active { background: rgba(48, 209, 88, 0.15); color: var(--green); }
+  .status-pill.archived { background: rgba(255, 159, 10, 0.15); color: var(--orange); }
+  .status-pill.cancelled { background: rgba(255, 69, 58, 0.15); color: var(--red); }
+
+  #section-stats, #section-messages, #section-tools, #section-reminders { display: none; }
+  #section-stats.active, #section-messages.active, #section-tools.active, #section-reminders.active { display: block; }
 </style>
 </head>
 <body>
@@ -66,6 +71,7 @@
   <div class="tab active" data-section="stats">Tokens</div>
   <div class="tab" data-section="messages">Messages</div>
   <div class="tab" data-section="tools">Tool Calls</div>
+  <div class="tab" data-section="reminders">Reminders</div>
 </div>
 
 <!-- TOKENS -->
@@ -92,6 +98,24 @@
     <table>
       <thead><tr><th>Heure</th><th>Tool</th><th>Input</th><th>Status</th><th>Duree</th></tr></thead>
       <tbody id="tools-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- REMINDERS -->
+<div id="section-reminders">
+  <div class="card">
+    <div class="period-select">
+      <select id="reminders-status">
+        <option value="">Tous</option>
+        <option value="active">Actifs</option>
+        <option value="archived">Archives</option>
+        <option value="cancelled">Annules</option>
+      </select>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>Chat</th><th>Status</th><th>Titre</th><th>Instruction</th><th>Prochaine</th><th>Derniere</th><th>Archivee</th></tr></thead>
+      <tbody id="reminders-tbody"></tbody>
     </table>
   </div>
 </div>
@@ -228,6 +252,36 @@ async function loadToolCalls() {
   tbody.innerHTML = html;
 }
 
+// --- Reminders ---
+async function loadReminders() {
+  const status = document.getElementById("reminders-status").value;
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const resp = await fetch(`${API}/api/reminders${query}`);
+  const json = await resp.json();
+  const tbody = document.getElementById("reminders-tbody");
+
+  if (!json.reminders.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="color:var(--text-dim)">Pas de reminders.</td></tr>';
+    return;
+  }
+
+  let html = "";
+  json.reminders.forEach(reminder => {
+    html += `<tr>
+      <td>#${reminder.id}</td>
+      <td>${reminder.chat_id}</td>
+      <td><span class="status-pill ${reminder.status}">${reminder.status}</span></td>
+      <td>${escapeHtml(reminder.title)}</td>
+      <td title="${escapeAttr(reminder.instruction || "")}">${truncate(reminder.instruction || "", 70)}</td>
+      <td>${fmtDateTime(reminder.next_run_at)}</td>
+      <td>${fmtDateTime(reminder.last_run_at)}</td>
+      <td>${fmtDateTime(reminder.archived_at)}</td>
+    </tr>`;
+  });
+
+  tbody.innerHTML = html;
+}
+
 function escapeHtml(s) {
   const d = document.createElement("div");
   d.textContent = s;
@@ -242,10 +296,23 @@ function truncate(s, n) {
   return s.length > n ? s.substring(0, n) + "..." : s;
 }
 
+function fmtDateTime(s) {
+  if (!s) return "-";
+  return new Date(s).toLocaleString("fr-FR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // Initial load
+document.getElementById("reminders-status").addEventListener("change", loadReminders);
 loadStats();
 loadMessages(false);
 loadToolCalls();
+loadReminders();
 </script>
 </body>
 </html>

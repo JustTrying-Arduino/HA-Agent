@@ -1,5 +1,0 @@
-{
-    "schedule": "0 8 * * *",
-    "message": "Give me a brief morning summary: weather for today, and any important reminders from my MEMORY.md.",
-    "channel": "telegram"
-}

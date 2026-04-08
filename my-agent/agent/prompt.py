@@ -1,7 +1,9 @@
 """System prompt assembly from workspace files."""
 
 import logging
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from agent.config import cfg
 
@@ -18,6 +20,19 @@ def build_system_prompt() -> str:
     """Build the system prompt from AGENT.md, USER.md, skills, and MEMORY.md."""
     ws = Path(cfg.workspace_path)
     parts = []
+
+    try:
+        now_local = datetime.now(ZoneInfo(cfg.timezone))
+    except ZoneInfoNotFoundError:
+        now_local = datetime.utcnow()
+    parts.append(
+        "## Runtime Context\n"
+        f"- Current local time: {now_local.strftime('%Y-%m-%d %H:%M %Z')}\n"
+        f"- Default timezone: {cfg.timezone}\n"
+        "- Reminders must be managed with dedicated reminder tools, not by editing system files.\n"
+        "- Reminder tools available: create_reminder, list_reminders, update_reminder, cancel_reminder.\n"
+        "- When a date/time is ambiguous or in the past, ask the user to clarify before creating a reminder."
+    )
 
     agent_md = _read_if_exists(ws / "AGENT.md")
     if agent_md:
@@ -43,10 +58,10 @@ def build_system_prompt() -> str:
 
 
 def build_cron_prompt() -> str:
-    """Build the system prompt for cron executions: standard prompt + Prompt_Cron.md."""
+    """Build the system prompt for scheduled reminder executions."""
     base = build_system_prompt()
     ws = Path(cfg.workspace_path)
-    cron_md = _read_if_exists(ws / "Prompt_Cron.md")
-    if cron_md:
-        return base + "\n\n---\n\n## Cron Instructions\n" + cron_md
+    reminder_md = _read_if_exists(ws / "Prompt_Reminder.md")
+    if reminder_md:
+        return base + "\n\n---\n\n## Reminder Trigger Instructions\n" + reminder_md
     return base

@@ -77,7 +77,7 @@ async def _run_agent_inner(chat_id: int, user_message: str, cron: bool) -> str:
             logger.info("Tool call: %s(%s)", tool_name, _truncate(str(arguments), 200))
 
             t0 = time.time()
-            result = await execute_tool(tool_name, arguments)
+            result = await execute_tool(tool_name, arguments, {"chat_id": chat_id})
             duration_ms = int((time.time() - t0) * 1000)
             success = not result.startswith("Error")
 

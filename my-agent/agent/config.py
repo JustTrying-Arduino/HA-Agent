@@ -20,6 +20,7 @@ class Config:
     workspace_path: str = "/share/myagent/workspace"
     db_path: str = "/share/myagent/agent.db"
     ingress_port: int = 8099
+    timezone: str = "UTC"
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -40,6 +41,7 @@ class Config:
             max_session_messages=int(os.environ.get("MAX_SESSION_MESSAGES", "15")),
             log_level=os.environ.get("LOG_LEVEL", "info"),
             supervisor_token=os.environ.get("SUPERVISOR_TOKEN", ""),
+            timezone=os.environ.get("TZ", "UTC"),
         )
 
 

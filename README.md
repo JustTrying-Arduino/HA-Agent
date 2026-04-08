@@ -7,12 +7,13 @@ Agent IA minimaliste qui tourne dans Home Assistant. Il communique via Telegram,
 ```
 Telegram ──► Bot (polling) ──► Boucle Agent ──► OpenAI API
                                     │
-                            ┌───────┼───────┐
-                            ▼       ▼       ▼
-                          exec   files    web
-                          shell  r/w/edit search/fetch
-                                    │
-                              SQLite ◄──── Dashboard (ingress HA)
+                            ┌───────┼────────┬──────────┐
+                            ▼       ▼        ▼          ▼
+                          exec   files      web     reminders
+                          shell  r/w/edit  fetch     scheduler
+                                                    + storage
+                                                      │
+                                                SQLite ◄──── Dashboard (ingress HA)
 ```
 
 L'agent tourne dans un seul container Docker Alpine (~60-80 MB). Tout est dans un process Python unique : le bot Telegram (polling), la boucle agent, et le serveur web dashboard partagent le même event loop asyncio.
@@ -33,7 +34,7 @@ Pas de sandboxing des commandes shell ou des chemins de fichiers. Le tool `exec`
 
 ### Stockage dans /share
 
-Tout le workspace (prompts, skills, cron, mémoire) et la base SQLite vivent dans `/share/myagent/`. Ce dossier est persistent entre les redémarrages et accessible via File Editor, Samba, et SSH dans Home Assistant.
+Tout le workspace (prompts, skills, mémoire) et la base SQLite vivent dans `/share/myagent/`. Ce dossier est persistent entre les redémarrages et accessible via File Editor, Samba, et SSH dans Home Assistant.
 
 **Pourquoi** : l'utilisateur peut éditer les prompts et les skills directement depuis HA, sans rebuild du container.
 
@@ -76,11 +77,11 @@ L'agent écrit lui-même dans `MEMORY.md` quand on lui demande de retenir quelqu
 
 **Pourquoi** : pas de vector database, pas d'embeddings. Un fichier Markdown est lisible, éditable par l'utilisateur, et suffisant pour un agent personnel.
 
-### Cron via crond Alpine
+### Rappels natifs via scheduler interne
 
-Les tâches planifiées sont des fichiers JSON dans `workspace/cron/`. Au démarrage, `run.sh` génère le crontab. Chaque cron lance un process Python séparé qui exécute l'agent avec un prompt additionnel (`Prompt_Cron.md`).
+Les rappels ponctuels et récurrents sont stockés en SQLite et pilotés par un scheduler interne. L'agent peut créer, lister, modifier et annuler ses propres rappels via des tools dédiés. Lorsqu'un rappel se déclenche, l'agent est relancé avec un prompt additionnel dédié (`Prompt_Reminder.md`).
 
-**Pourquoi** : crond est déjà dans Alpine, fiable, et ne consomme rien. Le process séparé évite la complexité d'injecter des messages dans le bot running.
+**Pourquoi** : activation immédiate sans redémarrage, gestion correcte des rappels one-shot, historique et archivage, et suppression de toute dépendance à `crond` ou à des fichiers JSON manuels.
 
 ## Installation
 
@@ -121,23 +122,10 @@ Les fichiers du workspace sont dans `/share/myagent/workspace/` :
 | `AGENT.md` | Prompt système — identité, règles, comportement |
 | `USER.md` | Profil utilisateur |
 | `MEMORY.md` | Mémoire long-terme (écrit par l'agent) |
-| `Prompt_Cron.md` | Instructions additionnelles pour les tâches cron |
+| `Prompt_Reminder.md` | Instructions additionnelles pour les déclenchements planifiés |
 | `skills/` | Dossiers de skills (chacun avec un `SKILL.md`) |
-| `cron/*.json` | Tâches planifiées |
 
 Tous ces fichiers sont éditables directement depuis File Editor dans HA.
-
-### Format cron
-
-```json
-{
-    "schedule": "0 8 * * *",
-    "message": "Donne-moi un résumé météo pour aujourd'hui.",
-    "channel": "telegram"
-}
-```
-
-Le champ `schedule` suit la syntaxe crontab standard. Renommer le fichier sans `.disabled` pour l'activer, puis redémarrer l'add-on.
 
 ## Tools disponibles
 
@@ -148,6 +136,10 @@ Le champ `schedule` suit la syntaxe crontab standard. Renommer le fichier sans `
 | `write_file` | Créer ou écraser un fichier |
 | `edit_file` | Modifier un fichier (recherche/remplacement) |
 | `list_dir` | Lister un répertoire |
+| `create_reminder` | Créer un rappel ponctuel ou récurrent |
+| `list_reminders` | Lister les rappels du chat courant |
+| `update_reminder` | Modifier un rappel existant |
+| `cancel_reminder` | Annuler un rappel existant |
 | `web_search` | Recherche Brave Search (si clé configurée) |
 | `web_fetch` | Récupérer le contenu texte d'une URL |
 
@@ -162,5 +154,5 @@ Le champ `schedule` suit la syntaxe crontab standard. Renommer le fichier sans `
 | Bot | python-telegram-bot (polling) |
 | Dashboard | aiohttp + vanilla JS |
 | Base de données | SQLite (WAL) |
-| Cron | crond Alpine |
+| Scheduling | Scheduler interne + SQLite |
 | Image de base | ghcr.io/home-assistant/{arch}-base:3.22 |

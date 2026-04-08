@@ -56,6 +56,29 @@ def init_db():
             success INTEGER NOT NULL,
             duration_ms INTEGER NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            instruction TEXT NOT NULL,
+            schedule_kind TEXT NOT NULL,
+            schedule_expr TEXT NOT NULL,
+            timezone TEXT NOT NULL,
+            status TEXT NOT NULL,
+            next_run_at TEXT,
+            last_run_at TEXT,
+            archived_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_error TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_reminders_status_next_run
+            ON reminders(status, next_run_at);
+
+        CREATE INDEX IF NOT EXISTS idx_reminders_chat_status
+            ON reminders(chat_id, status);
     """)
     db.commit()
     logger.info("Database initialized at %s", cfg.db_path)
