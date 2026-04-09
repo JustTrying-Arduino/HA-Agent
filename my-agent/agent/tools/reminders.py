@@ -13,14 +13,24 @@ def _chat_id_from_context(context: dict | None) -> int:
 
 @register(
     name="create_reminder",
-    description="Create a one-time or recurring reminder for the current chat.",
+    description=(
+        "Create a one-time or recurring reminder for the current chat. "
+        "When the reminder triggers at the scheduled time, the agent will be invoked again "
+        "and must execute the provided instruction automatically, so the instruction should "
+        "be explicit, self-contained, and action-oriented."
+    ),
     parameters={
         "type": "object",
         "properties": {
             "title": {"type": "string", "description": "Short reminder title"},
             "instruction": {
                 "type": "string",
-                "description": "Instruction the agent must execute when the reminder triggers",
+                "description": (
+                    "Precise, self-contained instruction that the agent will execute later "
+                    "when the reminder triggers. Include the exact task, expected outcome, "
+                    "and any useful context because the future run may not have the current "
+                    "conversation details."
+                ),
             },
             "schedule_kind": {
                 "type": "string",
