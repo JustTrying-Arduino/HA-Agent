@@ -40,6 +40,7 @@ mkdir -p "${WORKSPACE}/skills"
 
 # --- Copy templates on first startup (no overwrite) ---
 cp -n /usr/local/share/workspace/*.md "${WORKSPACE}/" 2>/dev/null || true
+cp -rn /usr/local/share/workspace/skills/. "${WORKSPACE}/skills/" 2>/dev/null || true
 
 # --- Read HA config → environment variables ---
 export OPENAI_API_KEY="$(get_option 'openai_api_key')"

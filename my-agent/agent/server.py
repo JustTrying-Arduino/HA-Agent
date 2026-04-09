@@ -17,6 +17,14 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 # Approximate cost per 1M tokens (USD) — adjust as needed
 MODEL_COSTS = {
+    "gpt-5.4": {"input": 2.5, "cached": 0.25, "output": 15.0},
+    "gpt-5.4-mini": {"input": 0.75, "cached": 0.075, "output": 4.5},
+    "gpt-5.2": {"input": 1.75, "cached": 0.175, "output": 14.0},
+    "gpt-5.2-pro": {"input": 21.0, "output": 168.0},
+    "gpt-5.1": {"input": 1.25, "cached": 0.125, "output": 10.0},
+    "gpt-5": {"input": 1.25, "cached": 0.125, "output": 10.0},
+    "gpt-5-mini": {"input": 0.25, "cached": 0.025, "output": 2.0},
+    "gpt-5-nano": {"input": 0.05, "cached": 0.005, "output": 0.4},
     "gpt-4.1": {"input": 2.0, "cached": 0.5, "output": 8.0},
     "gpt-4.1-mini": {"input": 0.4, "cached": 0.1, "output": 1.6},
     "gpt-4.1-nano": {"input": 0.1, "cached": 0.025, "output": 0.4},
@@ -59,11 +67,12 @@ async def handle_stats(request: web.Request) -> web.Response:
         input_t = r["input_tokens"]
         output_t = r["output_tokens"]
         cached_t = r["cached_tokens"]
+        cached_cost = costs.get("cached", costs["input"])
         # Cost: non-cached input at full price, cached at cached price, output at output price
         non_cached_input = input_t - cached_t
         estimated_cost = (
             non_cached_input / 1_000_000 * costs["input"]
-            + cached_t / 1_000_000 * costs["cached"]
+            + cached_t / 1_000_000 * cached_cost
             + output_t / 1_000_000 * costs["output"]
         )
         data.append({
