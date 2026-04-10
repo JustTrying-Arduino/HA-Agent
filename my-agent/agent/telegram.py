@@ -17,6 +17,9 @@ MAX_TELEGRAM_MSG = 4096
 INITIAL_STATUS_TEXT = "En reflexion..."
 DEFAULT_TOOL_STATUS = "Traitement en cours..."
 STATUS_TOOLS = {
+    "read_file",
+    "write_file",
+    "edit_file",
     "web_search",
     "web_fetch",
     "exec",
