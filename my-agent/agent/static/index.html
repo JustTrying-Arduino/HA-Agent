@@ -49,6 +49,50 @@
   td { padding: 8px; border-bottom: 1px solid var(--border); }
   .success { color: var(--green); }
   .failure { color: var(--red); }
+  .table-text { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+  .expandable-cell {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .expandable-cell:hover .expandable-hint,
+  .expandable-cell:focus-visible .expandable-hint { color: #fff; }
+  .expandable-cell:focus-visible {
+    outline: 2px solid rgba(10, 132, 255, 0.45);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  .expandable-preview {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    overflow: hidden;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .expandable-cell.multi-line .expandable-preview { -webkit-line-clamp: 2; }
+  .expandable-full { display: none; }
+  .expandable-cell.expanded .expandable-preview { display: none; }
+  .expandable-cell.expanded .expandable-full {
+    display: block;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .expandable-hint {
+    display: inline-block;
+    margin-top: 4px;
+    color: var(--accent);
+    font-size: 0.82em;
+    font-weight: 600;
+  }
 
   .load-more { display: block; width: 100%; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--accent); cursor: pointer; text-align: center; margin-top: 12px; }
 
@@ -244,7 +288,7 @@ async function loadToolCalls() {
     html += `<tr>
       <td>${time}</td>
       <td>${tc.tool_name}</td>
-      <td title="${escapeAttr(tc.input_summary || "")}">${truncate(tc.input_summary || "", 60)}</td>
+      <td class="table-text">${renderExpandableCell(tc.input_summary || "", { previewChars: 60 })}</td>
       <td>${status}</td>
       <td>${tc.duration_ms}ms</td>
     </tr>`;
@@ -272,7 +316,7 @@ async function loadReminders() {
       <td>${reminder.chat_id}</td>
       <td><span class="status-pill ${reminder.status}">${reminder.status}</span></td>
       <td>${escapeHtml(reminder.title)}</td>
-      <td title="${escapeAttr(reminder.instruction || "")}">${truncate(reminder.instruction || "", 70)}</td>
+      <td class="table-text">${renderExpandableCell(reminder.instruction || "", { previewChars: 70, multiLine: true })}</td>
       <td>${fmtDateTime(reminder.next_run_at)}</td>
       <td>${fmtDateTime(reminder.last_run_at)}</td>
       <td>${fmtDateTime(reminder.archived_at)}</td>
@@ -288,12 +332,27 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
-function escapeAttr(s) {
-  return s.replace(/"/g, "&quot;").replace(/</g, "&lt;");
+function renderExpandableCell(text, options = {}) {
+  const value = text || "";
+  if (!value) return "-";
+
+  const { previewChars = 70, multiLine = false } = options;
+  if (value.length <= previewChars) return escapeHtml(value);
+
+  const safe = escapeHtml(value);
+  const multiLineClass = multiLine ? " multi-line" : "";
+  return `<button type="button" class="expandable-cell${multiLineClass}" aria-expanded="false" onclick="toggleExpandable(this)">
+    <span class="expandable-preview">${safe}</span>
+    <span class="expandable-full">${safe}</span>
+    <span class="expandable-hint">Voir plus</span>
+  </button>`;
 }
 
-function truncate(s, n) {
-  return s.length > n ? s.substring(0, n) + "..." : s;
+function toggleExpandable(button) {
+  const expanded = button.classList.toggle("expanded");
+  button.setAttribute("aria-expanded", String(expanded));
+  const hint = button.querySelector(".expandable-hint");
+  if (hint) hint.textContent = expanded ? "Voir moins" : "Voir plus";
 }
 
 function fmtDateTime(s) {
