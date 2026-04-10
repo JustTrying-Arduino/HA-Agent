@@ -3,6 +3,8 @@
 import json
 import time
 import logging
+import inspect
+from collections.abc import Awaitable, Callable
 
 from openai import AsyncOpenAI
 
@@ -14,18 +16,29 @@ from agent.tools import get_tool_schemas, execute_tool
 logger = logging.getLogger(__name__)
 
 LOOP_TIMEOUT = 300  # 5 minutes max per agent run
+ProgressCallback = Callable[[str, dict], Awaitable[None] | None]
 
 
-async def run_agent(chat_id: int, user_message: str, cron: bool = False) -> str:
+async def run_agent(
+    chat_id: int,
+    user_message: str,
+    cron: bool = False,
+    progress_callback: ProgressCallback | None = None,
+) -> str:
     """Run the agent loop for a single user message. Returns the final response text."""
     try:
-        return await _run_agent_inner(chat_id, user_message, cron)
+        return await _run_agent_inner(chat_id, user_message, cron, progress_callback)
     except Exception as e:
         logger.exception("Agent loop error for chat_id=%s", chat_id)
         return f"An error occurred: {e}"
 
 
-async def _run_agent_inner(chat_id: int, user_message: str, cron: bool) -> str:
+async def _run_agent_inner(
+    chat_id: int,
+    user_message: str,
+    cron: bool,
+    progress_callback: ProgressCallback | None,
+) -> str:
     # Save user message
     save_message(chat_id, "user", user_message)
 
@@ -75,6 +88,7 @@ async def _run_agent_inner(chat_id: int, user_message: str, cron: bool) -> str:
                 arguments = {}
 
             logger.info("Tool call: %s(%s)", tool_name, _truncate(str(arguments), 200))
+            await _notify_progress(progress_callback, "tool_start", tool_name=tool_name)
 
             t0 = time.time()
             result = await execute_tool(tool_name, arguments, {"chat_id": chat_id})
@@ -101,6 +115,13 @@ async def _run_agent_inner(chat_id: int, user_message: str, cron: bool) -> str:
                 "tool_call_id": tc.id,
                 "content": result,
             })
+            await _notify_progress(
+                progress_callback,
+                "tool_end",
+                tool_name=tool_name,
+                duration_ms=duration_ms,
+                success=success,
+            )
 
         # Next LLM call
         response = await client.chat.completions.create(
@@ -139,3 +160,19 @@ def _truncate(text: str, max_len: int) -> str:
     if len(text) > max_len:
         return text[:max_len] + "..."
     return text
+
+
+async def _notify_progress(
+    progress_callback: ProgressCallback | None,
+    event: str,
+    **payload,
+):
+    if progress_callback is None:
+        return
+
+    try:
+        maybe_awaitable = progress_callback(event, payload)
+        if inspect.isawaitable(maybe_awaitable):
+            await maybe_awaitable
+    except Exception:
+        logger.exception("Progress callback failed for event=%s", event)

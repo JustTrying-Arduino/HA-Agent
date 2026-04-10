@@ -1,5 +1,6 @@
 """Telegram bot: polling, message dispatch (text + audio)."""
 
+import asyncio
 import os
 import tempfile
 import logging
@@ -14,6 +15,22 @@ from agent.tools.audio import transcribe_audio
 logger = logging.getLogger(__name__)
 
 MAX_TELEGRAM_MSG = 4096
+LONG_TOOL_CALL_SECONDS = 1.5
+INITIAL_STATUS_TEXT = "En reflexion..."
+DEFAULT_TOOL_STATUS = "Traitement en cours..."
+TOOL_STATUS_LABELS = {
+    "read_file": "Lecture de fichier...",
+    "write_file": "Ecriture de fichier...",
+    "edit_file": "Modification de fichier...",
+    "list_dir": "Exploration du dossier...",
+    "web_search": "Recherche web...",
+    "web_fetch": "Lecture d'une page web...",
+    "exec": "Execution d'une commande...",
+    "create_reminder": "Creation du rappel...",
+    "list_reminders": "Consultation des rappels...",
+    "update_reminder": "Mise a jour du rappel...",
+    "cancel_reminder": "Annulation du rappel...",
+}
 
 
 def start_bot() -> Application:
@@ -31,11 +48,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning("Unauthorized message from chat_id=%s", chat_id)
         return
 
+    if not (update.message.text or update.message.voice or update.message.audio):
+        return
+
+    status_message = await update.message.reply_text(INITIAL_STATUS_TEXT)
+    progress_callback, progress_state = _build_progress_callback(status_message)
+
     # Extract text (or transcribe audio)
     if update.message.voice or update.message.audio:
         text = await _handle_audio(update)
         if text is None:
-            await update.message.reply_text("Failed to transcribe audio message.")
+            await _safe_edit_message(status_message, progress_state, "Failed to transcribe audio message.")
             return
     elif update.message.text:
         text = update.message.text
@@ -45,12 +68,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("Incoming message from chat_id=%s: %s", chat_id, text[:100])
 
     # Run agent
-    response = await run_agent(chat_id, text)
+    response = await run_agent(chat_id, text, progress_callback=progress_callback)
 
     logger.info("Outgoing message to chat_id=%s: %s", chat_id, response[:100])
 
     # Send response (split if too long)
-    await _send_response(update, response)
+    await _finalize_response(update, status_message, progress_state, response)
 
 
 async def _handle_audio(update: Update) -> str | None:
@@ -107,3 +130,80 @@ async def _send_response(update: Update, text: str):
 
     for chunk in final_chunks:
         await update.message.reply_text(chunk)
+
+
+def _build_progress_callback(status_message):
+    state = {
+        "current_text": INITIAL_STATUS_TEXT,
+        "token": 0,
+        "delay_task": None,
+    }
+
+    async def progress_callback(event: str, payload: dict):
+        if event == "tool_start":
+            state["token"] += 1
+            token = state["token"]
+            _cancel_delay_task(state)
+            state["delay_task"] = asyncio.create_task(
+                _delayed_tool_status_update(status_message, state, token, payload.get("tool_name"))
+            )
+            return
+
+        if event == "tool_end":
+            state["token"] += 1
+            _cancel_delay_task(state)
+
+    return progress_callback, state
+
+
+async def _delayed_tool_status_update(status_message, state: dict, token: int, tool_name: str | None):
+    try:
+        await asyncio.sleep(LONG_TOOL_CALL_SECONDS)
+    except asyncio.CancelledError:
+        return
+    if token != state["token"]:
+        return
+    await _safe_edit_message(status_message, state, _tool_status_text(tool_name))
+
+
+def _cancel_delay_task(state: dict):
+    task = state.get("delay_task")
+    if task is not None:
+        task.cancel()
+        state["delay_task"] = None
+
+
+def _tool_status_text(tool_name: str | None) -> str:
+    label = TOOL_STATUS_LABELS.get(tool_name or "", DEFAULT_TOOL_STATUS)
+    return f"Outil en cours : {label}"
+
+
+async def _safe_edit_message(message, state: dict, text: str):
+    current = state.get("current_text")
+    if current == text:
+        return
+
+    try:
+        await message.edit_text(text)
+        state["current_text"] = text
+    except Exception:
+        logger.exception("Failed to edit Telegram status message")
+
+
+async def _safe_delete_message(message):
+    try:
+        await message.delete()
+    except Exception:
+        logger.exception("Failed to delete Telegram status message")
+
+
+async def _finalize_response(update: Update, status_message, state: dict, text: str):
+    content = text or "(empty response)"
+    _cancel_delay_task(state)
+
+    if len(content) <= MAX_TELEGRAM_MSG:
+        await _safe_edit_message(status_message, state, content)
+        return
+
+    await _safe_delete_message(status_message)
+    await _send_response(update, content)
