@@ -4,7 +4,7 @@
 
 A minimalist AI agent packaged as a **Home Assistant add-on**. It runs in a Docker container (Alpine), communicates via **Telegram**, executes actions through tools (shell, files, web, reminders), and exposes a dashboard via HA ingress. No agentic framework — just the OpenAI SDK with a custom tool_use loop.
 
-**Current version:** 0.2.4
+**Current version:** 0.2.5
 
 ---
 
@@ -87,7 +87,7 @@ The container IS the security boundary. `exec` tool runs `subprocess.run(cmd, sh
 Telegram bot uses polling via `python-telegram-bot`. No port exposure, no reverse proxy, works behind NAT.
 
 ### Telegram temporary status message
-For each incoming Telegram message, the bot immediately sends a lightweight placeholder message (`En reflexion...`) before the LLM response is ready. If a tool call runs longer than 1.5 seconds, that same Telegram message is edited with a user-facing mapped label such as "Recherche web..." or "Lecture de fichier...". When the final answer is ready, the placeholder is edited into the final response if it fits in a single Telegram message; otherwise the placeholder is deleted and the response is sent in chunks. This is intentionally not token streaming and should stay low-chatter to avoid slowing the flow.
+For each incoming Telegram message, the bot immediately sends a lightweight placeholder message (`En reflexion...`) before the LLM response is ready. Only a curated set of long or user-visible tools such as web search, web fetch, and shell execution update that same Telegram message, and they do so immediately when the tool starts. Shorter or less visible tools do not update the placeholder. When the final answer is ready, the placeholder is edited into the final response if it fits in a single Telegram message; otherwise the placeholder is deleted and the response is sent in chunks. This is intentionally not token streaming and should stay low-chatter to avoid slowing the flow.
 
 ### SQLite with WAL
 Single DB at `/share/myagent/agent.db`. WAL mode for concurrent reads (dashboard + bot). Tables: `messages`, `token_usage`, `tool_calls`, `reminders`.

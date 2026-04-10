@@ -1,6 +1,5 @@
 """Telegram bot: polling, message dispatch (text + audio)."""
 
-import asyncio
 import os
 import tempfile
 import logging
@@ -15,9 +14,13 @@ from agent.tools.audio import transcribe_audio
 logger = logging.getLogger(__name__)
 
 MAX_TELEGRAM_MSG = 4096
-LONG_TOOL_CALL_SECONDS = 1.5
 INITIAL_STATUS_TEXT = "En reflexion..."
 DEFAULT_TOOL_STATUS = "Traitement en cours..."
+STATUS_TOOLS = {
+    "web_search",
+    "web_fetch",
+    "exec",
+}
 TOOL_STATUS_LABELS = {
     "read_file": "Lecture de fichier...",
     "write_file": "Ecriture de fichier...",
@@ -135,42 +138,15 @@ async def _send_response(update: Update, text: str):
 def _build_progress_callback(status_message):
     state = {
         "current_text": INITIAL_STATUS_TEXT,
-        "token": 0,
-        "delay_task": None,
     }
 
     async def progress_callback(event: str, payload: dict):
         if event == "tool_start":
-            state["token"] += 1
-            token = state["token"]
-            _cancel_delay_task(state)
-            state["delay_task"] = asyncio.create_task(
-                _delayed_tool_status_update(status_message, state, token, payload.get("tool_name"))
-            )
-            return
-
-        if event == "tool_end":
-            state["token"] += 1
-            _cancel_delay_task(state)
+            tool_name = payload.get("tool_name")
+            if tool_name in STATUS_TOOLS:
+                await _safe_edit_message(status_message, state, _tool_status_text(tool_name))
 
     return progress_callback, state
-
-
-async def _delayed_tool_status_update(status_message, state: dict, token: int, tool_name: str | None):
-    try:
-        await asyncio.sleep(LONG_TOOL_CALL_SECONDS)
-    except asyncio.CancelledError:
-        return
-    if token != state["token"]:
-        return
-    await _safe_edit_message(status_message, state, _tool_status_text(tool_name))
-
-
-def _cancel_delay_task(state: dict):
-    task = state.get("delay_task")
-    if task is not None:
-        task.cancel()
-        state["delay_task"] = None
 
 
 def _tool_status_text(tool_name: str | None) -> str:
@@ -199,7 +175,6 @@ async def _safe_delete_message(message):
 
 async def _finalize_response(update: Update, status_message, state: dict, text: str):
     content = text or "(empty response)"
-    _cancel_delay_task(state)
 
     if len(content) <= MAX_TELEGRAM_MSG:
         await _safe_edit_message(status_message, state, content)
