@@ -28,8 +28,9 @@ def register(name: str, description: str, parameters: dict):
     return decorator
 
 
-def get_tool_schemas() -> list[dict]:
-    return [t["schema"] for t in TOOLS.values()]
+def get_tool_schemas(exclude: set[str] | None = None) -> list[dict]:
+    exc = exclude or set()
+    return [t["schema"] for name, t in TOOLS.items() if name not in exc]
 
 
 async def execute_tool(name: str, arguments: dict, context: dict | None = None) -> str:

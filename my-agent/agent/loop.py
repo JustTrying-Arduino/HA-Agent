@@ -51,25 +51,36 @@ async def _run_agent_inner(
 
     # Prepare OpenAI client
     client = AsyncOpenAI(api_key=cfg.openai_api_key, base_url=cfg.openai_api_base)
-    tools = get_tool_schemas()
-    tool_kwargs = {"tools": tools} if tools else {}
 
-    # Token accumulators
-    total_input = 0
-    total_output = 0
-    total_cached = 0
+    # Model routing
+    current_model = cfg.openai_model_light
+    escalated = False
+
+    # Per-model token accumulators: {model: [input, output, cached]}
+    token_accum: dict[str, list[int]] = {}
+
+    def _add_tokens(model: str, inp: int, out: int, cached: int):
+        if model not in token_accum:
+            token_accum[model] = [0, 0, 0]
+        token_accum[model][0] += inp
+        token_accum[model][1] += out
+        token_accum[model][2] += cached
+
+    def _build_tool_kwargs() -> dict:
+        exclude = {"escalate_model"} if escalated else set()
+        schemas = get_tool_schemas(exclude=exclude)
+        return {"tools": schemas} if schemas else {}
 
     start_time = time.time()
 
     # First LLM call
     response = await client.chat.completions.create(
-        model=cfg.openai_model,
+        model=current_model,
         messages=messages,
-        **tool_kwargs,
+        **_build_tool_kwargs(),
     )
-    total_input += response.usage.prompt_tokens
-    total_output += response.usage.completion_tokens
-    total_cached += _get_cached_tokens(response)
+    _add_tokens(current_model, response.usage.prompt_tokens,
+                response.usage.completion_tokens, _get_cached_tokens(response))
 
     # Tool use loop
     while response.choices[0].message.tool_calls:
@@ -110,6 +121,12 @@ async def _run_agent_inner(
                 duration_ms=duration_ms,
             )
 
+            # Detect escalation
+            if tool_name == "escalate_model" and not escalated:
+                current_model = cfg.openai_model
+                escalated = True
+                logger.info("Model escalated to %s for chat_id=%s", current_model, chat_id)
+
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
@@ -123,24 +140,25 @@ async def _run_agent_inner(
                 success=success,
             )
 
-        # Next LLM call
+        # Next LLM call (with updated model and tools)
         response = await client.chat.completions.create(
-            model=cfg.openai_model,
+            model=current_model,
             messages=messages,
-            **tool_kwargs,
+            **_build_tool_kwargs(),
         )
-        total_input += response.usage.prompt_tokens
-        total_output += response.usage.completion_tokens
-        total_cached += _get_cached_tokens(response)
+        _add_tokens(current_model, response.usage.prompt_tokens,
+                    response.usage.completion_tokens, _get_cached_tokens(response))
 
     # Extract final response
     final_text = response.choices[0].message.content or ""
 
-    # Log tokens
-    log_token_usage(chat_id, cfg.openai_model, total_input, total_output, total_cached)
+    # Log tokens per model
+    for model, (inp, out, cached) in token_accum.items():
+        if inp or out:
+            log_token_usage(chat_id, model, inp, out, cached)
 
-    # Save assistant message
-    save_message(chat_id, "assistant", final_text)
+    # Save assistant message with model info
+    save_message(chat_id, "assistant", final_text, model=current_model)
 
     return final_text
 

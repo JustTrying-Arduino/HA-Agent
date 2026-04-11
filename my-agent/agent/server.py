@@ -95,13 +95,13 @@ async def handle_messages(request: web.Request) -> web.Response:
 
     if chat_id:
         rows = db.fetchall(
-            "SELECT id, chat_id, role, content, timestamp, archived "
+            "SELECT id, chat_id, role, content, timestamp, archived, model "
             "FROM messages WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?",
             (int(chat_id), limit),
         )
     else:
         rows = db.fetchall(
-            "SELECT id, chat_id, role, content, timestamp, archived "
+            "SELECT id, chat_id, role, content, timestamp, archived, model "
             "FROM messages ORDER BY timestamp DESC LIMIT ?",
             (limit,),
         )

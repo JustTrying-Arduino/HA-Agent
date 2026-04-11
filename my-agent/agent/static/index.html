@@ -36,6 +36,7 @@
   .msg-role.user { background: var(--accent); color: #fff; }
   .msg-role.assistant { background: #5856d6; color: #fff; }
   .msg-time { font-size: 0.75em; color: var(--text-dim); }
+  .msg-model { font-size: 0.65em; padding: 1px 6px; border-radius: 4px; background: rgba(255, 159, 10, 0.15); color: var(--orange); font-weight: 600; margin-left: 4px; }
   .msg-content { font-size: 0.9em; white-space: pre-wrap; word-break: break-word; }
 
   .tool-call { background: var(--bg); border-radius: 8px; padding: 8px 12px; margin: 6px 0; font-size: 0.85em; border-left: 3px solid var(--orange); }
@@ -250,25 +251,15 @@ async function loadStats() {
     return;
   }
 
-  // Aggregate by period (across models)
-  const byPeriod = {};
-  json.data.forEach(d => {
-    if (!byPeriod[d.period]) byPeriod[d.period] = { input: 0, output: 0, cached: 0, cost: 0 };
-    byPeriod[d.period].input += d.input_tokens;
-    byPeriod[d.period].output += d.output_tokens;
-    byPeriod[d.period].cached += d.cached_tokens;
-    byPeriod[d.period].cost += d.estimated_cost;
-  });
-
   let html = '<div class="stats-grid">';
-  for (const [period, d] of Object.entries(byPeriod)) {
+  json.data.forEach(d => {
     html += `<div class="stat-box">
-      <div class="stat-label">${period}</div>
-      <div class="stat-value">${fmt(d.input)} in / ${fmt(d.output)} out</div>
-      <div class="stat-value"><span class="cached">${fmt(d.cached)} cached</span></div>
-      <div class="stat-cost">$${d.cost.toFixed(2)}</div>
+      <div class="stat-label">${d.period} · <span class="msg-model">${escapeHtml(d.model)}</span></div>
+      <div class="stat-value">${fmt(d.input_tokens)} in / ${fmt(d.output_tokens)} out</div>
+      <div class="stat-value"><span class="cached">${fmt(d.cached_tokens)} cached</span></div>
+      <div class="stat-cost">$${d.estimated_cost.toFixed(4)}</div>
     </div>`;
-  }
+  });
   html += '</div>';
   container.innerHTML = html;
 }
@@ -301,10 +292,12 @@ async function loadMessages(append) {
     const time = new Date(m.timestamp).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const roleClass = m.role;
     const icon = m.role === "user" ? "👤" : "🤖";
+    const modelBadge = (m.role === "assistant" && m.model) ? `<span class="msg-model">${escapeHtml(m.model)}</span>` : "";
     html += `<div class="msg">
       <div class="msg-header">
         <span class="msg-role ${roleClass}">${icon} ${m.role}</span>
         <span class="msg-time">${time}</span>
+        ${modelBadge}
       </div>
       <div class="msg-content">${escapeHtml(m.content)}</div>`;
 

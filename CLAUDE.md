@@ -4,7 +4,7 @@
 
 A minimalist AI agent packaged as a **Home Assistant add-on**. It runs in a Docker container (Alpine), communicates via **Telegram**, executes actions through tools (shell, files, web, reminders), and exposes a dashboard via HA ingress. No agentic framework — just the OpenAI SDK with a custom tool_use loop.
 
-**Current version:** 0.2.7
+**Current version:** 0.3.0
 
 ---
 
@@ -60,6 +60,7 @@ HA-Agent/
     │   │   ├── files.py               # read_file, write_file, edit_file, list_dir
     │   │   ├── web.py                 # web_search (Brave), web_fetch
     │   │   ├── audio.py               # Groq Whisper transcription (not a tool)
+    │   │   ├── router.py              # escalate_model tool (LLM model routing)
     │   │   └── reminders.py           # create/list/update/cancel_reminder tools
     │   └── static/
     │       └── index.html             # Dashboard: vanilla JS, dark mode, ~250 lines
@@ -101,6 +102,16 @@ Replaced the initial Alpine crond approach. Reminders are stored in SQLite, sche
 ### Cached tokens tracked separately
 `token_usage` table has a `cached_tokens` column. Extracted from `response.usage.prompt_tokens_details.cached_tokens`. Dashboard shows cached vs. non-cached costs.
 
+### Model routing (cost optimization)
+Every agent loop starts with `cfg.openai_model_light` (cheap model, e.g. `gpt-4.1-mini`). The LLM has access to an `escalate_model` tool — when called, all subsequent LLM calls in that loop use `cfg.openai_model` (full model, e.g. `gpt-4.1`). Key design points:
+- **Self-routing**: the LLM decides when to escalate based on task complexity. No separate classifier call.
+- **Conditional tool injection**: `escalate_model` is only included in tool schemas when using the light model. After escalation, it's excluded via `get_tool_schemas(exclude={"escalate_model"})`.
+- **Prompt guidance**: when `openai_model_light != openai_model`, the system prompt's Runtime Context tells the LLM it's on the light model and when to escalate.
+- **Per-model token tracking**: token accumulators are keyed by model name. If both models are used in one run, two `token_usage` rows are logged.
+- **Model stored on messages**: the `messages` table has a `model` column (nullable) recording which model produced each assistant response.
+- **Dashboard**: assistant messages show a model badge. Stats tab shows cost breakdown per model per period.
+- **Disabled when equal**: if `openai_model_light == openai_model`, routing is effectively disabled (no prompt instruction, `escalate_model` tool still registered but never useful).
+
 ---
 
 ## How things work
@@ -120,10 +131,11 @@ Replaced the initial Alpine crond approach. Reminders are stored in SQLite, sche
 1. Save user message to DB
 2. Build system prompt (standard or cron variant)
 3. Load session history (timeout 48h + window 15 messages)
-4. Call AsyncOpenAI with tools
-5. While tool_calls: optionally notify progress callback → execute → log → optionally notify completion → send results back → call LLM again
-6. Log total token usage (input + output + cached, accumulated across all LLM calls)
-7. Save assistant response, return it
+4. Set `current_model = cfg.openai_model_light`, `escalated = False`
+5. Call AsyncOpenAI with tools (including `escalate_model` if not escalated)
+6. While tool_calls: execute tools → if `escalate_model` called, switch `current_model` to `cfg.openai_model` and rebuild tool schemas without it → call LLM again
+7. Log token usage per model (separate rows if both models were used)
+8. Save assistant response with model info, return it
 
 ### Config flow
 `config.yaml` options → HA UI → `/data/options.json` → `run.sh` reads with `jq` → env vars → `config.py` `Config.from_env()` → `cfg` singleton.
@@ -218,6 +230,7 @@ Always bump `version` in `config.yaml` for every change pushed to GitHub. HA nee
 - Max output limits: exec 10k chars, read_file 50k chars, web_fetch 20k chars.
 - `audio.py` is NOT a tool — it's a utility for Telegram voice message transcription.
 - Telegram-facing tool progress uses a fixed mapping from internal tool names to short French user-facing labels.
+- `get_tool_schemas(exclude=)` supports filtering tools out dynamically (used by model router to hide `escalate_model` after escalation).
 
 ### Reminders
 - Stored in SQLite `reminders` table, not in filesystem.
@@ -238,7 +251,7 @@ Always bump `version` in `config.yaml` for every change pushed to GitHub. HA nee
 
 - **Home Assistant tools** (ha_call_service, ha_get_states) — deferred to a future iteration.
 - **Streaming** Telegram token-by-token responses (currently uses a temporary placeholder message and only shows slow tool phases).
-- **Multi-agent** or multi-model support.
+- **Multi-agent** support.
 - **Webhook** mode for Telegram.
 
 ---
@@ -254,4 +267,5 @@ Always bump `version` in `config.yaml` for every change pushed to GitHub. HA nee
 | Change session rules | `agent/memory.py` (timeout, window size) |
 | Add dashboard endpoint | `agent/server.py` + `agent/static/index.html` |
 | Modify reminder logic | `agent/reminders.py` (storage) + `agent/tools/reminders.py` (LLM tools) + `agent/scheduler.py` (execution) |
+| Change model routing | `agent/tools/router.py` (tool) + `agent/loop.py` (routing logic) + `agent/prompt.py` (LLM instructions) |
 | Bump version | `my-agent/config.yaml` → version field |

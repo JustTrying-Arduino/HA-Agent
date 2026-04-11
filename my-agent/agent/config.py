@@ -9,6 +9,7 @@ class Config:
     openai_api_key: str = ""
     openai_api_base: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4.1"
+    openai_model_light: str = "gpt-4.1-mini"
     groq_api_key: str = ""
     brave_api_key: str = ""
     telegram_bot_token: str = ""
@@ -33,6 +34,7 @@ class Config:
             openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
             openai_api_base=os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1"),
             openai_model=os.environ.get("OPENAI_MODEL", "gpt-4.1"),
+            openai_model_light=os.environ.get("OPENAI_MODEL_LIGHT", "gpt-4.1-mini"),
             groq_api_key=os.environ.get("GROQ_API_KEY", ""),
             brave_api_key=os.environ.get("BRAVE_API_KEY", ""),
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),

@@ -7,7 +7,10 @@ configuration:
     description: Base URL for the OpenAI-compatible API
   openai_model:
     name: LLM Model
-    description: Model name to use (e.g. gpt-4.1, gpt-4o)
+    description: Main model used for complex tasks (e.g. gpt-4.1, gpt-4o)
+  openai_model_light:
+    name: Light LLM Model
+    description: Cheaper model used by default. The agent can escalate to the main model for complex tasks. (e.g. gpt-4.1-mini)
   groq_api_key:
     name: Groq API Key
     description: API key for Groq Whisper (voice message transcription). Leave empty to disable.

@@ -81,6 +81,15 @@ def init_db():
             ON reminders(chat_id, status);
     """)
     db.commit()
+
+    # Migrations
+    try:
+        db.execute("ALTER TABLE messages ADD COLUMN model TEXT")
+        db.commit()
+        logger.info("Migration: added 'model' column to messages table")
+    except Exception:
+        pass  # Column already exists
+
     logger.info("Database initialized at %s", cfg.db_path)
 
 

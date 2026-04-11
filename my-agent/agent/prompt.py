@@ -64,6 +64,15 @@ def build_system_prompt(chat_id: int | None = None) -> str:
         "- When a date/time is ambiguous or in the past, ask the user to clarify before creating a reminder."
     )
 
+    if cfg.openai_model_light != cfg.openai_model:
+        parts[-1] += (
+            f"\n- You are currently running on the lightweight model ({cfg.openai_model_light}). "
+            f"If this task requires advanced reasoning, complex analysis, long-form writing, "
+            f"or multi-step planning, use the escalate_model tool to switch to {cfg.openai_model}. "
+            f"For simple tasks (greetings, short answers, reminders, factual questions), "
+            f"answer directly without escalating."
+        )
+
     agent_md = _read_if_exists(ws / "AGENT.md")
     if agent_md:
         parts.append(agent_md)

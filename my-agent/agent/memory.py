@@ -46,11 +46,11 @@ def archive_session(chat_id: int):
     db.commit()
 
 
-def save_message(chat_id: int, role: str, content: str):
+def save_message(chat_id: int, role: str, content: str, model: str | None = None):
     """Save a message to the session history."""
     db.execute(
-        "INSERT INTO messages (chat_id, role, content, timestamp, archived) VALUES (?, ?, ?, ?, 0)",
-        (chat_id, role, content, _now_iso()),
+        "INSERT INTO messages (chat_id, role, content, timestamp, archived, model) VALUES (?, ?, ?, ?, 0, ?)",
+        (chat_id, role, content, _now_iso(), model),
     )
     db.commit()
 

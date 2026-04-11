@@ -46,6 +46,7 @@ cp -rn /usr/local/share/workspace/skills/. "${WORKSPACE}/skills/" 2>/dev/null ||
 export OPENAI_API_KEY="$(get_option 'openai_api_key')"
 export OPENAI_API_BASE="$(get_option 'openai_api_base' 'https://api.openai.com/v1')"
 export OPENAI_MODEL="$(get_option 'openai_model' 'gpt-4.1')"
+export OPENAI_MODEL_LIGHT="$(get_option 'openai_model_light' 'gpt-4.1-mini')"
 export GROQ_API_KEY="$(get_option 'groq_api_key')"
 export BRAVE_API_KEY="$(get_option 'brave_api_key')"
 export TELEGRAM_BOT_TOKEN="$(get_option 'telegram_bot_token')"
