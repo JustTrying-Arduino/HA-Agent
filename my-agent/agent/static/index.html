@@ -165,6 +165,7 @@
       </select>
     </div>
     <table>
+      <colgroup><col style="width:4%"><col style="width:6%"><col style="width:7%"><col style="width:16%"><col style="width:35%"><col style="width:11%"><col style="width:11%"><col style="width:11%"></colgroup>
       <thead><tr><th>ID</th><th>Chat</th><th>Status</th><th>Titre</th><th>Instruction</th><th>Prochaine</th><th>Derniere</th><th>Archivee</th></tr></thead>
       <tbody id="reminders-tbody"></tbody>
     </table>
@@ -185,14 +186,14 @@ const MOCK = {
   ]},
   messages: {
     messages: [
-      { role: "user", timestamp: "2026-04-11T22:27:00Z", content: "Quelle est la température dans le salon ?" },
       { role: "assistant", timestamp: "2026-04-11T22:27:05Z", content: "La température dans le salon est de 21.3°C avec une humidité de 45%." },
-      { role: "user", timestamp: "2026-04-11T22:15:00Z", content: "[Message vocal transcrit]  Allume la lumière du bureau." },
+      { role: "user", timestamp: "2026-04-11T22:27:00Z", content: "Quelle est la température dans le salon ?" },
       { role: "assistant", timestamp: "2026-04-11T22:15:03Z", content: "C'est fait, la lumière du bureau est allumée 💡" },
-      { role: "user", timestamp: "2026-04-11T21:45:00Z", content: "Programme un rappel pour sortir les poubelles demain à 8h." },
+      { role: "user", timestamp: "2026-04-11T22:15:00Z", content: "[Message vocal transcrit]  Allume la lumière du bureau." },
       { role: "assistant", timestamp: "2026-04-11T21:45:04Z", content: "Rappel créé : \"Sortir les poubelles\" programmé pour demain à 08:00." },
-      { role: "user", timestamp: "2026-04-10T19:30:00Z", content: "Quel temps fait-il dehors ?" },
+      { role: "user", timestamp: "2026-04-11T21:45:00Z", content: "Programme un rappel pour sortir les poubelles demain à 8h." },
       { role: "assistant", timestamp: "2026-04-10T19:30:08Z", content: "Il fait 14°C avec un ciel dégagé. Le vent souffle à 12 km/h. Pas de pluie prévue ce soir." },
+      { role: "user", timestamp: "2026-04-10T19:30:00Z", content: "Quel temps fait-il dehors ?" },
     ],
     tool_calls: [
       { timestamp: "2026-04-11T22:27:02Z", tool_name: "exec", output_summary: "temperature: 21.3\nhumidity: 45", success: true, duration_ms: 180 },
@@ -413,7 +414,6 @@ function toggleExpandable(button) {
 function fmtDateTime(s) {
   if (!s) return "-";
   return new Date(s).toLocaleString("fr-FR", {
-    year: "numeric",
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

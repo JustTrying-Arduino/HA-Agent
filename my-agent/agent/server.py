@@ -107,19 +107,17 @@ async def handle_messages(request: web.Request) -> web.Response:
         )
 
     messages = [dict(r) for r in rows]
-    messages.reverse()
 
     # Attach tool calls to messages
     if messages:
-        msg_ids = [m["id"] for m in messages]
-        # Get tool calls in the time range of these messages
+        # Messages are DESC — first is newest, last is oldest
         if len(messages) >= 2:
-            min_ts = messages[0]["timestamp"]
-            max_ts = messages[-1]["timestamp"]
+            min_ts = messages[-1]["timestamp"]
+            max_ts = messages[0]["timestamp"]
             tool_rows = db.fetchall(
                 "SELECT * FROM tool_calls "
                 "WHERE chat_id = ? AND timestamp >= ? AND timestamp <= ? "
-                "ORDER BY timestamp",
+                "ORDER BY timestamp DESC",
                 (messages[0]["chat_id"], min_ts, max_ts),
             )
             tool_calls = [dict(r) for r in tool_rows]
@@ -138,7 +136,6 @@ async def handle_tool_calls(request: web.Request) -> web.Response:
         (limit,),
     )
     data = [dict(r) for r in rows]
-    data.reverse()
     return web.json_response({"tool_calls": data})
 
 
