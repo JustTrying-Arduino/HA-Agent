@@ -52,9 +52,15 @@ async def process_due_reminders(bot):
                 reminder["chat_id"],
                 reminder["title"],
             )
+            context = (
+                f"[REMINDER TRIGGER] id=#{reminder['id']} "
+                f"title=\"{reminder['title']}\" "
+                f"kind={reminder['schedule_kind']}\n"
+                f"[REMINDER INSTRUCTION] {reminder['instruction']}"
+            )
             response = await run_agent(
                 reminder["chat_id"],
-                reminder["instruction"],
+                context,
                 cron=True,
             )
             await send_text(bot, reminder["chat_id"], response)

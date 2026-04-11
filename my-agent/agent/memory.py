@@ -69,6 +69,16 @@ def log_token_usage(chat_id: int, model: str, input_tokens: int, output_tokens: 
     )
 
 
+def get_recent_tool_calls(chat_id: int, limit: int = 5) -> list[dict]:
+    """Return the most recent tool calls for a chat (newest first)."""
+    rows = db.fetchall(
+        "SELECT tool_name, input_summary, success, duration_ms, timestamp "
+        "FROM tool_calls WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?",
+        (chat_id, limit),
+    )
+    return [dict(r) for r in rows]
+
+
 def log_tool_call(
     chat_id: int, message_id: str, tool_name: str,
     input_summary: str, output_summary: str, success: bool, duration_ms: int,

@@ -4,7 +4,7 @@
 
 A minimalist AI agent packaged as a **Home Assistant add-on**. It runs in a Docker container (Alpine), communicates via **Telegram**, executes actions through tools (shell, files, web, reminders), and exposes a dashboard via HA ingress. No agentic framework — just the OpenAI SDK with a custom tool_use loop.
 
-**Current version:** 0.2.5
+**Current version:** 0.2.6
 
 ---
 
@@ -49,8 +49,8 @@ HA-Agent/
     │   ├── db.py                      # SQLite init, WAL mode, helpers
     │   ├── loop.py                    # Agent loop: LLM → tool_use → response (+ progress callbacks)
     │   ├── telegram.py                # Bot: polling, text + audio dispatch + temporary status message
-    │   ├── memory.py                  # Session windowing + logging helpers
-    │   ├── prompt.py                  # System prompt assembly from workspace files
+    │   ├── memory.py                  # Session windowing, logging helpers, recent tool calls query
+    │   ├── prompt.py                  # System prompt assembly from workspace files + recent tool calls
     │   ├── reminders.py               # Reminder storage, cron parsing, scheduling logic
     │   ├── scheduler.py               # Async scheduler: polls due reminders every 15s
     │   ├── server.py                  # aiohttp dashboard + JSON API
@@ -139,19 +139,23 @@ def my_tool(arg1: str, _context: dict = None) -> str:
 - Tools return strings (errors start with "Error")
 
 ### Prompt assembly (prompt.py)
-Rebuilt on every request by reading workspace files:
+Rebuilt on every request by reading workspace files. `build_system_prompt(chat_id)` accepts an optional `chat_id` to include context-aware sections:
 1. Runtime context (current time, timezone, reminder instructions)
 2. AGENT.md (identity, rules)
 3. USER.md (user profile)
 4. skills/*/SKILL.md (each skill)
 5. MEMORY.md (long-term context)
+6. Recent tool calls (last 5 for this chat_id, max 3h old — from `memory.get_recent_tool_calls`)
 
 Joined with `\n\n---\n\n`. For cron/reminder runs, `Prompt_Reminder.md` is appended.
+
+The recent tool calls section gives the agent visibility into its cross-run tool history, avoiding redundant calls. Controlled by `RECENT_TOOLS_MAX_AGE_HOURS = 3` in `prompt.py`.
 
 ### Session management (memory.py)
 - **Timeout:** Last message > 48h → archive entire session
 - **Window:** Keep last 15 messages
 - Only user/assistant messages are persisted. Tool call/result messages are ephemeral within a single loop run.
+- `get_recent_tool_calls(chat_id, limit=5)` queries the `tool_calls` table for cross-run tool history, used by `prompt.py` to inject context.
 
 ### Dashboard (server.py + static/index.html)
 aiohttp serves on port 8099 (HA ingress). API endpoints:
@@ -175,8 +179,8 @@ Frontend is single-file vanilla JS. Uses relative URLs (`./api/...`) for ingress
 - **Timestamps**: ISO 8601 UTC internally. Local time for display/prompts only.
 
 ### Documentation
-- `CLAUDE.md` must be kept in sync with every functional evolution of the project.
-- Any behavior change affecting user flows, tools, architecture, runtime behavior, or operational rules should update `CLAUDE.md` in the same change whenever possible.
+- **CLAUDE.md must ALWAYS be updated in the same change as any functional evolution.** This is a hard rule, not a best-effort guideline. Every behavior change affecting user flows, tools, architecture, runtime behavior, prompt structure, or operational rules must include the corresponding CLAUDE.md update before the change is considered complete.
+- When in doubt, update CLAUDE.md. Stale documentation is worse than verbose documentation.
 
 ### Docker / HA add-on
 - **Base image**: `ghcr.io/home-assistant/{arch}-base:3.22`
@@ -201,6 +205,10 @@ Always bump `version` in `config.yaml` for every change pushed to GitHub. HA nee
 - Single HTML file, vanilla JS. No framework, no build step, no node_modules.
 - Dark mode via CSS custom properties.
 - All API URLs relative (`./api/...`) for HA ingress compatibility.
+- Sticky header: title + tab bar stay fixed at the top when scrolling.
+- Dates shown as `dd/mm HH:MM` in both messages and tool calls tables.
+- Tool calls table uses compact single-line rows with inline "Voir plus" expand for input details.
+- **Mock data for local dev**: `fetchOrMock()` helper tries real API calls first; on failure (no backend = local dev), falls back to built-in mock data. Mocks are never used in production since the real API responds. No config flag needed.
 
 ### Tools
 - Each tool in its own file under `agent/tools/`.
@@ -215,7 +223,12 @@ Always bump `version` in `config.yaml` for every change pushed to GitHub. HA nee
 - Stored in SQLite `reminders` table, not in filesystem.
 - Schedule kinds: `once` (ISO datetime) or `recurring` (5-field cron).
 - Scheduler polls every 15 seconds.
-- When triggered: `run_agent(chat_id, instruction, cron=True)`.
+- When triggered, the scheduler injects a structured message with reminder metadata and instruction:
+  ```
+  [REMINDER TRIGGER] id=#12 title="Sortir les poubelles" kind=once
+  [REMINDER INSTRUCTION] Envoyer un message : Sortir les poubelles !
+  ```
+  This lets the agent know which reminder triggered it without needing to call `list_reminders`. The call is `run_agent(chat_id, context, cron=True)` with no `progress_callback`.
 - One-time reminders archived after execution. Recurring ones compute next_run_at.
 - Archived/cancelled reminders purged after 48h.
 

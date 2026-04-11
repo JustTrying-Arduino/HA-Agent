@@ -12,6 +12,7 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
+  .sticky-header { position: sticky; top: 0; z-index: 100; background: var(--bg); padding-bottom: 12px; }
   h1 { font-size: 1.4em; margin-bottom: 20px; }
   h2 { font-size: 1.1em; margin-bottom: 12px; color: var(--text-dim); }
 
@@ -44,14 +45,17 @@
   .tool-call .result.expanded { max-height: none; }
   .tool-call .fail { border-left-color: var(--red); }
 
-  table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
-  th { text-align: left; color: var(--text-dim); padding: 8px; border-bottom: 1px solid var(--border); }
-  td { padding: 8px; border-bottom: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85em; table-layout: fixed; }
+  th { text-align: left; color: var(--text-dim); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  td:first-child, td:last-child { white-space: nowrap; }
   .success { color: var(--green); }
   .failure { color: var(--red); }
   .table-text { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
   .expandable-cell {
-    display: block;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: nowrap;
     width: 100%;
     padding: 0;
     border: none;
@@ -61,6 +65,7 @@
     text-align: left;
     cursor: pointer;
   }
+  .expandable-cell.expanded { display: block; }
   .expandable-cell:hover .expandable-hint,
   .expandable-cell:focus-visible .expandable-hint { color: #fff; }
   .expandable-cell:focus-visible {
@@ -69,15 +74,13 @@
     border-radius: 6px;
   }
   .expandable-preview {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 1;
+    display: block;
     overflow: hidden;
-    white-space: normal;
-    word-break: break-word;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
-  .expandable-cell.multi-line .expandable-preview { -webkit-line-clamp: 2; }
+  .expandable-cell.multi-line .expandable-preview { white-space: nowrap; }
   .expandable-full { display: none; }
   .expandable-cell.expanded .expandable-preview { display: none; }
   .expandable-cell.expanded .expandable-full {
@@ -87,11 +90,13 @@
     overflow-wrap: anywhere;
   }
   .expandable-hint {
-    display: inline-block;
-    margin-top: 4px;
+    display: inline;
+    margin-left: 6px;
     color: var(--accent);
     font-size: 0.82em;
     font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .load-more { display: block; width: 100%; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; color: var(--accent); cursor: pointer; text-align: center; margin-top: 12px; }
@@ -109,13 +114,14 @@
 </style>
 </head>
 <body>
-<h1>My Agent</h1>
-
-<div class="tabs">
-  <div class="tab active" data-section="stats">Tokens</div>
-  <div class="tab" data-section="messages">Messages</div>
-  <div class="tab" data-section="tools">Tool Calls</div>
-  <div class="tab" data-section="reminders">Reminders</div>
+<div class="sticky-header">
+  <h1>My Agent</h1>
+  <div class="tabs">
+    <div class="tab active" data-section="stats">Tokens</div>
+    <div class="tab" data-section="messages">Messages</div>
+    <div class="tab" data-section="tools">Tool Calls</div>
+    <div class="tab" data-section="reminders">Reminders</div>
+  </div>
 </div>
 
 <!-- TOKENS -->
@@ -140,6 +146,7 @@
 <div id="section-tools">
   <div class="card">
     <table>
+      <colgroup><col style="width:10%"><col style="width:15%"><col style="width:55%"><col style="width:8%"><col style="width:12%"></colgroup>
       <thead><tr><th>Heure</th><th>Tool</th><th>Input</th><th>Status</th><th>Duree</th></tr></thead>
       <tbody id="tools-tbody"></tbody>
     </table>
@@ -169,6 +176,58 @@ const API = ".";
 let msgOffset = 0;
 const MSG_LIMIT = 50;
 
+// --- Mock data (used only when API is unreachable, i.e. local dev) ---
+const MOCK = {
+  stats: { data: [
+    { period: "2026-04-11", model: "gpt-4o", input_tokens: 48200, output_tokens: 12400, cached_tokens: 31000, estimated_cost: 0.42 },
+    { period: "2026-04-10", model: "gpt-4o", input_tokens: 35600, output_tokens: 9800, cached_tokens: 22000, estimated_cost: 0.31 },
+    { period: "2026-04-09", model: "gpt-4o", input_tokens: 61000, output_tokens: 15200, cached_tokens: 40500, estimated_cost: 0.58 },
+  ]},
+  messages: {
+    messages: [
+      { role: "user", timestamp: "2026-04-11T22:27:00Z", content: "Quelle est la température dans le salon ?" },
+      { role: "assistant", timestamp: "2026-04-11T22:27:05Z", content: "La température dans le salon est de 21.3°C avec une humidité de 45%." },
+      { role: "user", timestamp: "2026-04-11T22:15:00Z", content: "[Message vocal transcrit]  Allume la lumière du bureau." },
+      { role: "assistant", timestamp: "2026-04-11T22:15:03Z", content: "C'est fait, la lumière du bureau est allumée 💡" },
+      { role: "user", timestamp: "2026-04-11T21:45:00Z", content: "Programme un rappel pour sortir les poubelles demain à 8h." },
+      { role: "assistant", timestamp: "2026-04-11T21:45:04Z", content: "Rappel créé : \"Sortir les poubelles\" programmé pour demain à 08:00." },
+      { role: "user", timestamp: "2026-04-10T19:30:00Z", content: "Quel temps fait-il dehors ?" },
+      { role: "assistant", timestamp: "2026-04-10T19:30:08Z", content: "Il fait 14°C avec un ciel dégagé. Le vent souffle à 12 km/h. Pas de pluie prévue ce soir." },
+    ],
+    tool_calls: [
+      { timestamp: "2026-04-11T22:27:02Z", tool_name: "exec", output_summary: "temperature: 21.3\nhumidity: 45", success: true, duration_ms: 180 },
+      { timestamp: "2026-04-11T22:15:02Z", tool_name: "exec", output_summary: "Service light.turn_on called", success: true, duration_ms: 95 },
+      { timestamp: "2026-04-11T21:45:02Z", tool_name: "create_reminder", output_summary: '{"id": 12, "title": "Sortir les poubelles", "status": "active"}', success: true, duration_ms: 15 },
+    ]
+  },
+  tool_calls: { tool_calls: [
+    { timestamp: "2026-04-11T22:27:02Z", tool_name: "exec", input_summary: "{'command': 'curl -s http://supervisor/core/api/states/sensor.salon_temperature -H \"Authorization: Bearer $TOKEN\" | jq .state'}", success: true, duration_ms: 180 },
+    { timestamp: "2026-04-11T22:15:02Z", tool_name: "exec", input_summary: "{'command': 'curl -s -X POST http://supervisor/core/api/services/light/turn_on -H \"Authorization: Bearer $TOKEN\" -d {\"entity_id\": \"light.bureau\"}'}", success: true, duration_ms: 95 },
+    { timestamp: "2026-04-11T21:45:02Z", tool_name: "create_reminder", input_summary: "{'title': 'Sortir les poubelles', 'instruction': 'Envoyer un message : Sortir les poubelles !', 'schedule_kind': 'once', 'run_at': '2026-04-12 08:00'}", success: true, duration_ms: 15 },
+    { timestamp: "2026-04-10T19:30:03Z", tool_name: "web_fetch", input_summary: "{'url': 'https://api.open-meteo.com/v1/forecast?latitude=48.85&longitude=2.35&current_weather=true'}", success: true, duration_ms: 420 },
+    { timestamp: "2026-04-10T18:00:00Z", tool_name: "read_file", input_summary: "{'path': '/share/myagent/workspace/MEMORY.md'}", success: true, duration_ms: 8 },
+    { timestamp: "2026-04-10T14:22:00Z", tool_name: "exec", input_summary: "{'command': 'ls -la /share/myagent/workspace/skills/'}", success: true, duration_ms: 32 },
+    { timestamp: "2026-04-09T23:10:00Z", tool_name: "web_search", input_summary: "{'query': 'recette tarte aux pommes rapide'}", success: true, duration_ms: 1250 },
+    { timestamp: "2026-04-09T22:41:00Z", tool_name: "create_reminder", input_summary: "{'title': 'Proposition activités week-end (vendredi)', 'instruction': 'Exécuter le cron de vendredi du skill activity-planner : lire events.json, filtrer les événements du week-end et envoyer les suggestions'}", success: false, duration_ms: 6 },
+  ]},
+  reminders: { reminders: [
+    { id: 12, chat_id: 123456, status: "active", title: "Sortir les poubelles", instruction: "Envoyer un message : Sortir les poubelles !", next_run_at: "2026-04-12T06:00:00Z", last_run_at: null, archived_at: null },
+    { id: 10, chat_id: 123456, status: "active", title: "Briefing météo quotidien", instruction: "Consulter la météo et envoyer un résumé matinal avec la tenue recommandée", next_run_at: "2026-04-12T05:30:00Z", last_run_at: "2026-04-11T05:30:00Z", archived_at: null },
+    { id: 8, chat_id: 123456, status: "active", title: "Suggestions activités week-end", instruction: "Exécuter le cron du vendredi du skill activity-planner : lire events.json et proposer des activités", next_run_at: "2026-04-18T16:00:00Z", last_run_at: "2026-04-11T16:00:00Z", archived_at: null },
+    { id: 5, chat_id: 123456, status: "archived", title: "Rappel de test", instruction: "Envoyer un message dans ce chat : Rappel de test", next_run_at: null, last_run_at: "2026-04-09T06:30:00Z", archived_at: "2026-04-09T06:30:00Z" },
+  ]}
+};
+
+async function fetchOrMock(url, mockKey) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(resp.status);
+    return await resp.json();
+  } catch {
+    return MOCK[mockKey];
+  }
+}
+
 // --- Tabs ---
 document.querySelectorAll(".tab").forEach(tab => {
   tab.addEventListener("click", () => {
@@ -182,8 +241,7 @@ document.querySelectorAll(".tab").forEach(tab => {
 // --- Stats ---
 async function loadStats() {
   const period = document.getElementById("stats-period").value;
-  const resp = await fetch(`${API}/api/stats?period=${period}`);
-  const json = await resp.json();
+  const json = await fetchOrMock(`${API}/api/stats?period=${period}`, "stats");
   const container = document.getElementById("stats-container");
 
   if (!json.data.length) {
@@ -225,8 +283,7 @@ document.getElementById("stats-period").addEventListener("change", loadStats);
 // --- Messages ---
 async function loadMessages(append) {
   const limit = MSG_LIMIT;
-  const resp = await fetch(`${API}/api/messages?limit=${limit}`);
-  const json = await resp.json();
+  const json = await fetchOrMock(`${API}/api/messages?limit=${limit}`, "messages");
   const container = document.getElementById("messages-container");
 
   if (!append) container.innerHTML = "";
@@ -240,7 +297,7 @@ async function loadMessages(append) {
 
   let html = "";
   (json.messages || []).forEach(m => {
-    const time = new Date(m.timestamp).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const time = new Date(m.timestamp).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const roleClass = m.role;
     const icon = m.role === "user" ? "👤" : "🤖";
     html += `<div class="msg">
@@ -272,8 +329,7 @@ async function loadMessages(append) {
 
 // --- Tool Calls ---
 async function loadToolCalls() {
-  const resp = await fetch(`${API}/api/tool_calls?limit=50`);
-  const json = await resp.json();
+  const json = await fetchOrMock(`${API}/api/tool_calls?limit=50`, "tool_calls");
   const tbody = document.getElementById("tools-tbody");
 
   if (!json.tool_calls.length) {
@@ -283,7 +339,7 @@ async function loadToolCalls() {
 
   let html = "";
   json.tool_calls.forEach(tc => {
-    const time = new Date(tc.timestamp).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    const time = new Date(tc.timestamp).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const status = tc.success ? '<span class="success">✓</span>' : '<span class="failure">✗</span>';
     html += `<tr>
       <td>${time}</td>
@@ -300,8 +356,7 @@ async function loadToolCalls() {
 async function loadReminders() {
   const status = document.getElementById("reminders-status").value;
   const query = status ? `?status=${encodeURIComponent(status)}` : "";
-  const resp = await fetch(`${API}/api/reminders${query}`);
-  const json = await resp.json();
+  const json = await fetchOrMock(`${API}/api/reminders${query}`, "reminders");
   const tbody = document.getElementById("reminders-tbody");
 
   if (!json.reminders.length) {

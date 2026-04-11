@@ -43,7 +43,7 @@ async def _run_agent_inner(
     save_message(chat_id, "user", user_message)
 
     # Build system prompt
-    system_prompt = build_cron_prompt() if cron else build_system_prompt()
+    system_prompt = build_cron_prompt(chat_id) if cron else build_system_prompt(chat_id)
 
     # Build messages list
     session = get_session_messages(chat_id)

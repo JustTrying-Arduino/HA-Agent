@@ -1,11 +1,12 @@
 """System prompt assembly from workspace files."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from agent.config import cfg
+from agent.memory import get_recent_tool_calls
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,36 @@ def _read_if_exists(path: Path) -> str | None:
     return None
 
 
-def build_system_prompt() -> str:
+RECENT_TOOLS_MAX_AGE_HOURS = 3
+
+
+def _format_recent_tools(chat_id: int | None) -> str | None:
+    """Format recent tool calls as a compact summary for the system prompt."""
+    if chat_id is None:
+        return None
+    recent = get_recent_tool_calls(chat_id, limit=5)
+    if not recent:
+        return None
+
+    now = datetime.now(ZoneInfo(cfg.timezone))
+    cutoff = now - timedelta(hours=RECENT_TOOLS_MAX_AGE_HOURS)
+
+    lines = []
+    for tc in reversed(recent):  # oldest first
+        ts = datetime.fromisoformat(tc["timestamp"].replace("Z", "+00:00"))
+        ts_local = ts.astimezone(ZoneInfo(cfg.timezone))
+        if ts_local < cutoff:
+            continue
+        status = "ok" if tc["success"] else "FAIL"
+        time_str = ts_local.strftime("%Y-%m-%d %H:%M")
+        lines.append(f"- [{time_str}] {tc['tool_name']}({tc['input_summary'][:80]}) → {status} [{tc['duration_ms']}ms]")
+
+    if not lines:
+        return None
+    return "## Recent Tool Calls\n" + "\n".join(lines)
+
+
+def build_system_prompt(chat_id: int | None = None) -> str:
     """Build the system prompt from AGENT.md, USER.md, skills, and MEMORY.md."""
     ws = Path(cfg.workspace_path)
     parts = []
@@ -54,12 +84,16 @@ def build_system_prompt() -> str:
     if memory_md:
         parts.append(f"## Long-term Memory\n{memory_md}")
 
+    recent_tools = _format_recent_tools(chat_id)
+    if recent_tools:
+        parts.append(recent_tools)
+
     return "\n\n---\n\n".join(parts)
 
 
-def build_cron_prompt() -> str:
+def build_cron_prompt(chat_id: int | None = None) -> str:
     """Build the system prompt for scheduled reminder executions."""
-    base = build_system_prompt()
+    base = build_system_prompt(chat_id)
     ws = Path(cfg.workspace_path)
     reminder_md = _read_if_exists(ws / "Prompt_Reminder.md")
     if reminder_md:
