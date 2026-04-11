@@ -4,7 +4,7 @@
 
 A minimalist AI agent packaged as a **Home Assistant add-on**. It runs in a Docker container (Alpine), communicates via **Telegram**, executes actions through tools (shell, files, web, reminders), and exposes a dashboard via HA ingress. No agentic framework — just the OpenAI SDK with a custom tool_use loop.
 
-**Current version:** 0.2.6
+**Current version:** 0.2.7
 
 ---
 

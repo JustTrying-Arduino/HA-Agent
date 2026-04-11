@@ -36,7 +36,9 @@ DEFAULT_COST = {"input": 3.0, "cached": 1.5, "output": 10.0}
 
 async def handle_index(request: web.Request) -> web.Response:
     index_path = STATIC_DIR / "index.html"
-    return web.FileResponse(index_path)
+    resp = web.FileResponse(index_path)
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 async def handle_stats(request: web.Request) -> web.Response:
