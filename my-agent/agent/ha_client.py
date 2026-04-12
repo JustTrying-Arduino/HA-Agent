@@ -52,7 +52,7 @@ class HAClient:
         template = "{{ label_entities('" + label + "') | list }}"
         logger.debug("Refreshing Home Assistant label '%s' from Supervisor", cfg.ha_expose_label)
 
-        async with session.post("/api/template", json={"template": template}) as resp:
+        async with session.post("template", json={"template": template}) as resp:
             text = await resp.text()
             if resp.status >= 400:
                 logger.warning("Failed to resolve HA label '%s': %s", cfg.ha_expose_label, text)
@@ -75,19 +75,19 @@ class HAClient:
     async def get_states(self) -> list[dict]:
         session = await self._get_session()
         logger.debug("Fetching all Home Assistant states")
-        async with session.get("/api/states") as resp:
+        async with session.get("states") as resp:
             return await self._read_json_response(resp)
 
     async def get_state(self, entity_id: str) -> dict:
         session = await self._get_session()
         logger.debug("Fetching Home Assistant state for %s", entity_id)
-        async with session.get(f"/api/states/{entity_id}") as resp:
+        async with session.get(f"states/{entity_id}") as resp:
             return await self._read_json_response(resp, entity_id=entity_id)
 
     async def call_service(self, domain: str, service: str, data: dict) -> list[dict] | dict | str:
         session = await self._get_session()
         logger.debug("Calling Home Assistant service %s.%s with payload=%s", domain, service, data)
-        async with session.post(f"/api/services/{domain}/{service}", json=data) as resp:
+        async with session.post(f"services/{domain}/{service}", json=data) as resp:
             return await self._read_json_response(resp, entity_id=data.get("entity_id"))
 
     async def close(self) -> None:
