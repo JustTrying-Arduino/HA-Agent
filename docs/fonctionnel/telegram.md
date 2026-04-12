@@ -31,6 +31,7 @@ Les tools rapides ou peu visibles n'ont pas vocation à générer de bruit côt�
 
 - Si la réponse tient dans un seul message Telegram, le placeholder est édité en réponse finale.
 - Si elle dépasse cette limite, le placeholder est supprimé puis la réponse est envoyée en morceaux.
+- Si l'agent génère une réponse vide (silence intentionnel), le placeholder est supprimé et aucun message n'apparaît dans Telegram.
 
 ## Messages vocaux
 

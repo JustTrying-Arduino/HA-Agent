@@ -21,13 +21,13 @@ Les messages de tools ne sont pas persistés comme historique utilisateur/assist
 
 Le prompt est reconstruit à chaque requête à partir des fichiers du workspace. L'ordre logique est le suivant:
 
-1. contexte runtime, avec date, timezone et consignes liées au run;
+1. contexte runtime, avec date, timezone et consignes liées au run; si le petit modèle est actif et distinct du modèle principal, une consigne d'escalade est ajoutée à ce bloc (voir `routage-modele.md`);
 2. `AGENT.md`;
 3. `USER.md`;
 4. `chats/<chat_id>.md` si un contexte spécifique existe pour la conversation courante;
 5. un index compact des `skills/*/SKILL.md`;
 6. `MEMORY.md`;
-7. résumé des derniers tool calls récents pour le `chat_id` courant.
+7. résumé des derniers tool calls récents pour le `chat_id` courant — soumis à la configuration `include_recent_tool_calls` (voir section dédiée ci-dessous).
 
 Les blocs sont assemblés avec des séparateurs explicites. En mode rappel planifié, `Prompt_Reminder.md` est ajouté à la fin.
 
