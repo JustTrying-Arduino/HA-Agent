@@ -14,8 +14,32 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def expire_session_if_needed(chat_id: int) -> bool:
+    """Archive the active session if the last message is older than the timeout."""
+    row = db.fetchone(
+        "SELECT timestamp FROM messages "
+        "WHERE chat_id = ? AND archived = 0 "
+        "ORDER BY timestamp DESC LIMIT 1",
+        (chat_id,),
+    )
+
+    if row is None:
+        return False
+
+    last_ts = datetime.fromisoformat(row["timestamp"]).timestamp()
+    if time.time() - last_ts <= cfg.session_timeout_hours * 3600:
+        return False
+
+    archive_session(chat_id)
+    logger.info("Session archived for chat_id=%s (timeout)", chat_id)
+    return True
+
+
 def get_session_messages(chat_id: int) -> list[dict]:
     """Return active session messages for a chat, applying timeout and window rules."""
+    if expire_session_if_needed(chat_id):
+        return []
+
     rows = db.fetchall(
         "SELECT role, content, timestamp FROM messages "
         "WHERE chat_id = ? AND archived = 0 ORDER BY timestamp",
@@ -25,14 +49,7 @@ def get_session_messages(chat_id: int) -> list[dict]:
     if not rows:
         return []
 
-    # 1. Timeout: archive if last message is older than session_timeout
-    last_ts = datetime.fromisoformat(rows[-1]["timestamp"]).timestamp()
-    if time.time() - last_ts > cfg.session_timeout_hours * 3600:
-        archive_session(chat_id)
-        logger.info("Session archived for chat_id=%s (timeout)", chat_id)
-        return []
-
-    # 2. Window: keep only the last N messages
+    # Keep only the last N messages in the active session.
     messages = [{"role": r["role"], "content": r["content"]} for r in rows]
     return messages[-cfg.max_session_messages :]
 

@@ -6,13 +6,14 @@ Le point d'entrée métier est `run_agent(chat_id, user_message, cron=False, pro
 
 Le déroulé attendu est:
 
-1. sauvegarder le message utilisateur;
-2. construire le prompt système standard ou cron;
-3. charger l'historique de session utile;
-4. appeler le modèle courant avec les tools disponibles;
-5. exécuter chaque `tool_call`, puis relancer le modèle avec les résultats;
-6. journaliser les tokens consommés;
-7. sauvegarder la réponse assistant et la renvoyer.
+1. vérifier si la session courante a expiré et, si oui, l'archiver logiquement;
+2. sauvegarder le message utilisateur;
+3. construire le prompt système standard ou cron;
+4. charger l'historique de session utile;
+5. appeler le modèle courant avec les tools disponibles;
+6. exécuter chaque `tool_call`, puis relancer le modèle avec les résultats;
+7. journaliser les tokens consommés;
+8. sauvegarder la réponse assistant et la renvoyer.
 
 Les messages de tools ne sont pas persistés comme historique utilisateur/assistant. Ils ne vivent que dans l'exécution courante.
 
@@ -51,9 +52,13 @@ Le prompt rappelle explicitement à l'agent qu'il doit lire le `SKILL.md` avec `
 
 ## Gestion de session
 
-- Timeout de session: 48 heures sans message, puis archivage logique de la session courante.
-- Fenêtre de contexte: 15 messages user/assistant récents.
+- Le timeout de session est configurable via `session_timeout_hours` et vaut `48` heures par défaut.
+- La fenêtre de contexte est configurable via `max_session_messages` et vaut `15` messages par défaut.
+- Au maximum `15` messages user/assistant récents, ou la valeur configurée, sont envoyés au LLM si la session courante n'a pas expiré.
+- Après expiration du timeout, la session courante est archivée logiquement et aucun message précédent n'est envoyé à l'agent pour le run suivant.
 - Les horodatages sont stockés en UTC ISO 8601. L'heure locale sert aux affichages et au prompt runtime.
+
+Note d'évolution souhaitable: ajouter à terme une capacité explicite pour l'agent à rechercher dans l'historique archivé quand c'est utile, plutôt que de limiter l'accès au seul contexte de session actif. Cette capacité n'est pas implémentée aujourd'hui.
 
 ## Historique récent de tools
 

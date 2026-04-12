@@ -60,8 +60,9 @@ Les tokens en cache (prompt caching OpenAI) sont comptés à part dans la base e
 
 ### Sessions : fenêtre glissante + timeout
 
-- **Timeout 48h** : si le dernier message date de plus de 48h, la session est archivée et on repart à zéro
-- **Fenêtre 15 messages** : seuls les 15 derniers messages sont envoyés au LLM
+- **Timeout configurable** : `session_timeout_hours` vaut `48` heures par défaut. Si le dernier message de la session active est plus ancien, la session est archivée et on repart à zéro.
+- **Fenêtre configurable** : `max_session_messages` vaut `15` par défaut. Au maximum ce nombre de messages user/assistant récents est envoyé au LLM si la session n'a pas expiré.
+- **Après expiration** : aucun message précédent de la session expirée n'est envoyé à l'agent au run suivant.
 
 Les messages archivés restent consultables dans le dashboard.
 

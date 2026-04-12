@@ -9,7 +9,13 @@ from collections.abc import Awaitable, Callable
 from openai import AsyncOpenAI
 
 from agent.config import cfg
-from agent.memory import get_session_messages, save_message, log_token_usage, log_tool_call
+from agent.memory import (
+    expire_session_if_needed,
+    get_session_messages,
+    save_message,
+    log_token_usage,
+    log_tool_call,
+)
 from agent.prompt import build_system_prompt, build_cron_prompt
 from agent.tools import get_tool_schemas, execute_tool
 
@@ -40,6 +46,9 @@ async def _run_agent_inner(
     cron: bool,
     progress_callback: ProgressCallback | None,
 ) -> str:
+    # Archive an expired session before the new user message becomes the latest activity.
+    expire_session_if_needed(chat_id)
+
     # Save user message
     save_message(chat_id, "user", user_message)
 
