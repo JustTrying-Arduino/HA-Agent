@@ -211,19 +211,25 @@ async def _notify_progress(
         logger.exception("Progress callback failed for event=%s", event)
 
 
+def _message_field(message, field: str, default=None):
+    if isinstance(message, dict):
+        return message.get(field, default)
+    return getattr(message, field, default)
+
+
 def _log_llm_request(model: str, messages: list[dict], tools: list[dict] | None) -> None:
     if not logger.isEnabledFor(logging.DEBUG):
         return
 
     logger.debug("LLM request model=%s tools=%d", model, len(tools or []))
     for idx, message in enumerate(messages):
-        role = message.get("role", "?")
+        role = _message_field(message, "role", "?")
         if role == "system":
             logger.debug(
                 "LLM request message[%d] role=%s content=\n%s",
                 idx,
                 role,
-                _truncate(message.get("content", ""), DEBUG_TEXT_LIMIT),
+                _truncate(str(_message_field(message, "content", "")), DEBUG_TEXT_LIMIT),
             )
             continue
 
@@ -232,8 +238,8 @@ def _log_llm_request(model: str, messages: list[dict], tools: list[dict] | None)
                 "LLM request message[%d] role=%s tool_call_id=%s content=%s",
                 idx,
                 role,
-                message.get("tool_call_id", "-"),
-                _truncate(message.get("content", ""), DEBUG_TEXT_LIMIT),
+                _message_field(message, "tool_call_id", "-"),
+                _truncate(str(_message_field(message, "content", "")), DEBUG_TEXT_LIMIT),
             )
             continue
 
@@ -241,7 +247,7 @@ def _log_llm_request(model: str, messages: list[dict], tools: list[dict] | None)
             "LLM request message[%d] role=%s content=%s",
             idx,
             role,
-            _truncate(message.get("content", ""), DEBUG_TEXT_LIMIT),
+            _truncate(str(_message_field(message, "content", "")), DEBUG_TEXT_LIMIT),
         )
 
     if tools:
