@@ -15,22 +15,30 @@ Le déroulé attendu est:
 7. journaliser les tokens consommés;
 8. sauvegarder la réponse assistant et la renvoyer.
 
-Les messages de tools ne sont pas persistés comme historique utilisateur/assistant. Ils ne vivent que dans l'exécution courante.
-
-## Construction du prompt
+## Construction du prompt système
 
 Le prompt est reconstruit à chaque requête à partir des fichiers du workspace. L'ordre logique est le suivant:
 
-1. contexte runtime, avec date, timezone et consignes liées au run; si le petit modèle est actif et distinct du modèle principal, une consigne d'escalade est ajoutée à ce bloc (voir `routage-modele.md`);
+1. contexte runtime, avec date, timezone et consignes liées au run; si le petit modèle est actif et distinct du modèle principal, une consigne d'escalade est ajoutée à ce bloc (voir [routage-modele.md](routage-modele.md));
 2. `AGENT.md`;
 3. `USER.md`;
 4. `chats/<chat_id>.md` si un contexte spécifique existe pour la conversation courante — optionnel, ciblé par identifiant Telegram exact, permet d'ajouter des consignes propres à une conversation sans polluer `AGENT.md` ou `USER.md` (voir [multi-chat.md](multi-chat.md));
-5. un index compact des `skills/*/SKILL.md`;
+5. un index compact des `skills/*/SKILL.md` (voir [Index des skills ci-dessous](#index-des-skills));
 6. `MEMORY.md`;
-7. résumé des derniers tool calls récents pour le `chat_id` courant — soumis à la configuration `include_recent_tool_calls` (voir section dédiée ci-dessous);
+7. résumé des derniers tool calls récents pour le `chat_id` courant — soumis à la configuration `include_recent_tool_calls` (voir [section dédiée ci-dessous](#historique-récent-de-tools));
 8. en mode rappel planifié uniquement, `Prompt_Reminder.md` ajouté à la fin (voir [reminders.md](reminders.md)).
 
 Les blocs sont assemblés avec des séparateurs explicites.
+
+## Historique de session
+
+À chaque appel, le LLM reçoit le prompt système suivi de l'historique de session. La session contient les derniers messages `user` et `assistant` non archivés du `chat_id` courant, ordonnés chronologiquement et limités à `max_session_messages` (15 par défaut). Ces messages proviennent de SQLite. Voir [Gestion de session](#gestion-de-session) pour les règles d'expiration et d'archivage.
+
+## Messages de tool use
+
+Pendant la boucle tool_use, des messages s'ajoutent dynamiquement au tableau envoyé au LLM : le message `assistant` contenant les `tool_calls` demandés, puis un message `role: tool` par résultat d'exécution. À chaque itération, le LLM est relancé avec l'intégralité du tableau accumulé.
+
+Ces messages ne sont pas persistés en base ; ils n'existent que le temps du run courant.
 
 ## Index des skills
 
