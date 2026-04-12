@@ -26,6 +26,7 @@ Règles à préserver:
 - shell: exécution de commandes système;
 - fichiers: lecture, écriture, édition simple, listing;
 - web: recherche et récupération de contenu;
+- home assistant: recherche d'entités exposées, lecture d'état et appel de services via Supervisor;
 - reminders: création et gestion de rappels;
 - routage: `escalate_model` pour la bascule de modèle.
 
@@ -34,6 +35,8 @@ Règles à préserver:
 ## Exposition conditionnelle
 
 - `web_search` n'est exposé que si `cfg.brave_api_key` est configurée.
+- les tools Home Assistant ne sont exposés que si `cfg.supervisor_token` est configuré.
+- les tools Home Assistant limitent l'accès aux entités portant le label `cfg.ha_expose_label`.
 - `escalate_model` n'est exposé que tant que le run est encore sur le modèle léger.
 
 ## Limites et garde-fous actuels
@@ -41,6 +44,7 @@ Règles à préserver:
 - sortie shell tronquée à 10 000 caractères;
 - lecture de fichier tronquée à 50 000 caractères;
 - récupération web tronquée à 20 000 caractères.
+- cache de résolution du label Home Assistant: 60 secondes.
 
 Le projet ne sandboxe pas les tools à l'intérieur du conteneur. Cette liberté est intentionnelle et fait partie du contrat d'usage du projet.
 

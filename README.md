@@ -1,19 +1,15 @@
 # My Agent — Home Assistant Add-on
 
-Agent IA minimaliste qui tourne dans Home Assistant. Il communique via Telegram, peut exécuter des commandes, manipuler des fichiers, chercher sur le web, et transcrire des messages vocaux. Un dashboard intégré permet de suivre la consommation de tokens et l'historique des échanges.
+Agent IA minimaliste qui tourne dans Home Assistant. Il communique via Telegram, peut exécuter des commandes, manipuler des fichiers, chercher sur le web, interagir nativement avec Home Assistant via des tools filtrés par label, et transcrire des messages vocaux. Un dashboard intégré permet de suivre la consommation de tokens et l'historique des échanges.
 
 ## Architecture
 
 ```
 Telegram ──► Bot (polling) ──► Boucle Agent ──► OpenAI API
                                     │
-                            ┌───────┼────────┬──────────┐
-                            ▼       ▼        ▼          ▼
-                          exec   files      web     reminders
-                          shell  r/w/edit  fetch     scheduler
-                                                    + storage
-                                                      │
-                                                SQLite ◄──── Dashboard (ingress HA)
+                                    ├── exec / files / web / home assistant tools
+                                    ├── reminders scheduler
+                                    └── SQLite ◄──── Dashboard (ingress HA)
 ```
 
 L'agent tourne dans un seul container Docker Alpine (~60-80 MB). Tout est dans un process Python unique : le bot Telegram (polling), la boucle agent, et le serveur web dashboard partagent le même event loop asyncio.
@@ -94,6 +90,7 @@ Les rappels ponctuels et récurrents sont stockés en SQLite et pilotés par un 
    - `telegram_allowed_chat_ids` (obligatoire — votre chat ID Telegram)
    - `groq_api_key` (optionnel — pour les messages vocaux)
    - `brave_api_key` (optionnel — pour la recherche web)
+   - `ha_expose_label` (optionnel — label HA qui contrôle quelles entités sont visibles par l'agent)
 5. Démarrer l'add-on
 
 Le dashboard est accessible via le panneau latéral de l'add-on dans HA.
@@ -112,6 +109,7 @@ Le dashboard est accessible via le panneau latéral de l'add-on dans HA.
 | `session_timeout_hours` | `48` | Timeout de session en heures |
 | `max_session_messages` | `15` | Nombre max de messages en contexte |
 | `log_level` | `info` | Niveau de log (debug, info, warning, error) |
+| `ha_expose_label` | `agent` | Label Home Assistant utilisé pour exposer les entités contrôlables par l'agent |
 
 ## Workspace
 
@@ -142,6 +140,9 @@ Tous ces fichiers sont éditables directement depuis File Editor dans HA.
 | `cancel_reminder` | Annuler un rappel existant |
 | `web_search` | Recherche Brave Search (si clé configurée) |
 | `web_fetch` | Récupérer le contenu texte d'une URL |
+| `ha_search_entities` | Lister les entités Home Assistant exposées par le label configuré (si add-on HA) |
+| `ha_get_state` | Lire l'état et les attributs d'une entité Home Assistant exposée |
+| `ha_call_service` | Appeler un service Home Assistant sur une entité exposée |
 
 ## Stack technique
 

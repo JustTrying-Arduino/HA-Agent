@@ -17,6 +17,7 @@ class Config:
     session_timeout_hours: int = 48
     max_session_messages: int = 15
     log_level: str = "info"
+    ha_expose_label: str = "agent"
     supervisor_token: str = ""
     workspace_path: str = "/share/myagent/workspace"
     db_path: str = "/share/myagent/agent.db"
@@ -42,6 +43,7 @@ class Config:
             session_timeout_hours=int(os.environ.get("SESSION_TIMEOUT_HOURS", "48")),
             max_session_messages=int(os.environ.get("MAX_SESSION_MESSAGES", "15")),
             log_level=os.environ.get("LOG_LEVEL", "info"),
+            ha_expose_label=os.environ.get("HA_EXPOSE_LABEL", "agent"),
             supervisor_token=os.environ.get("SUPERVISOR_TOKEN", ""),
             timezone=os.environ.get("TZ", "UTC"),
         )

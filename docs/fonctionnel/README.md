@@ -18,6 +18,7 @@ Cette documentation décrit le fonctionnement du projet pour les IA et les déve
 | [`routage-modele.md`](./routage-modele.md) | Pour faire évoluer la logique de bascule entre modèle léger et modèle principal. |
 | [`telegram.md`](./telegram.md) | Pour tout changement sur le parcours Telegram: polling, placeholder, réponse finale, audio. |
 | [`dashboard.md`](./dashboard.md) | Pour les évolutions du dashboard, des endpoints JSON et des comportements front. |
+| [`homeassistant.md`](./homeassistant.md) | Pour l'intégration Supervisor, les tools HA natifs, le filtrage par label et la config associée. |
 | [`reminders.md`](./reminders.md) | Pour les rappels planifiés, le scheduler et le déclenchement des runs cron. |
 | [`tools.md`](./tools.md) | Pour ajouter ou modifier des tools, leurs règles d'exposition, leurs limites et leur exécution. |
 | [`workspace-et-memoire.md`](./workspace-et-memoire.md) | Pour les fichiers workspace, la mémoire durable, les skills et leur cycle de vie. |

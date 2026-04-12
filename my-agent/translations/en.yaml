@@ -32,3 +32,6 @@ configuration:
   log_level:
     name: Log Level
     description: Logging verbosity (debug, info, warning, error)
+  ha_expose_label:
+    name: HA Expose Label
+    description: Label name in Home Assistant used to control which entities the agent can see and control.

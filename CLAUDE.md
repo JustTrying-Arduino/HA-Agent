@@ -54,6 +54,7 @@ Consulter les fichiers suivants selon la zone modifiee:
 - [`docs/fonctionnel/routage-modele.md`](./docs/fonctionnel/routage-modele.md): escalation vers le modele principal et observabilite associee.
 - [`docs/fonctionnel/telegram.md`](./docs/fonctionnel/telegram.md): UX Telegram, placeholder, reponses, audio.
 - [`docs/fonctionnel/dashboard.md`](./docs/fonctionnel/dashboard.md): endpoints, comportements du dashboard et front.
+- [`docs/fonctionnel/homeassistant.md`](./docs/fonctionnel/homeassistant.md): integration Supervisor, tools HA natifs, filtrage par label et config associee.
 - [`docs/fonctionnel/reminders.md`](./docs/fonctionnel/reminders.md): rappels, scheduler, declenchements cron.
 - [`docs/fonctionnel/tools.md`](./docs/fonctionnel/tools.md): enregistrement, exposition, limites et effets visibles des tools.
 - [`docs/fonctionnel/workspace-et-memoire.md`](./docs/fonctionnel/workspace-et-memoire.md): workspace persistant, skills, memoire durable.
@@ -67,5 +68,6 @@ Consulter les fichiers suivants selon la zone modifiee:
 | Changement de logique de routage LLM | `docs/fonctionnel/routage-modele.md` |
 | Changement visible dans Telegram | `docs/fonctionnel/telegram.md` |
 | Changement dashboard ou API web | `docs/fonctionnel/dashboard.md` |
+| Changement integration Home Assistant native | `docs/fonctionnel/homeassistant.md` |
 | Changement rappels ou scheduler | `docs/fonctionnel/reminders.md` |
 | Changement workspace, skills ou memoire | `docs/fonctionnel/workspace-et-memoire.md` |

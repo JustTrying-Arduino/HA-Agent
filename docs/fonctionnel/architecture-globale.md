@@ -30,6 +30,7 @@ Le système tourne dans un seul process Python et un seul event loop `asyncio`. 
 - `agent/server.py` et `agent/static/index.html`: dashboard et API JSON.
 - `agent/db.py`: base SQLite, création des tables et configuration WAL.
 - `agent/tools/`: registre et implémentations de tools.
+- `agent/ha_client.py`: client Supervisor pour les interactions Home Assistant natives.
 
 ## Cycle de démarrage
 
@@ -46,6 +47,7 @@ Au démarrage, l'application:
 - Message Telegram entrant -> sauvegarde du message -> construction du prompt -> appels LLM et tools -> sauvegarde de la réponse -> envoi au chat.
 - Déclenchement d'un rappel -> création d'un message de contexte structuré -> run agent en mode `cron=True` -> éventuel envoi de message final.
 - Lecture dashboard -> endpoints JSON -> agrégations SQLite -> rendu front côté navigateur.
+- Appel Home Assistant natif -> client Supervisor -> API Core HA -> retour texte normalisé au LLM.
 
 ## Choix d'architecture à préserver
 
@@ -65,7 +67,6 @@ Le flux de configuration suit cette chaîne:
 
 Ces capacités ne sont pas implémentées à ce jour:
 
-- tools Home Assistant natifs comme `ha_call_service` ou `ha_get_states`;
 - streaming token par token dans Telegram;
 - mode multi-agent;
 - mode webhook pour Telegram.

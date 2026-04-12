@@ -23,6 +23,7 @@ Le bot envoie immédiatement un court message de type `En reflexion...` pour sig
 - recherche web;
 - récupération de page web;
 - exécution shell.
+- lecture ou commande Home Assistant.
 
 Les tools rapides ou peu visibles n'ont pas vocation à générer de bruit côté Telegram.
 

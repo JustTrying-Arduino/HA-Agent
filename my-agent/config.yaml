@@ -1,6 +1,6 @@
 name: "My Agent"
 description: "Minimalist AI agent with Telegram interface and tool execution"
-version: "0.3.1"
+version: "0.3.2"
 slug: "my-agent"
 url: "https://github.com/home-assistant/addons-example"
 
@@ -11,6 +11,7 @@ arch:
 startup: application
 boot: auto
 init: false
+homeassistant_api: true
 
 ingress: true
 ingress_port: 8099
@@ -32,6 +33,7 @@ options:
   session_timeout_hours: 48
   max_session_messages: 15
   log_level: "info"
+  ha_expose_label: "agent"
 
 schema:
   openai_api_key: str
@@ -45,3 +47,4 @@ schema:
   session_timeout_hours: int
   max_session_messages: int
   log_level: list(debug|info|warning|error)
+  ha_expose_label: str?

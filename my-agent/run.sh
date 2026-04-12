@@ -54,6 +54,7 @@ export TELEGRAM_ALLOWED_CHAT_IDS="$(get_option 'telegram_allowed_chat_ids')"
 export SESSION_TIMEOUT_HOURS="$(get_option 'session_timeout_hours' '48')"
 export MAX_SESSION_MESSAGES="$(get_option 'max_session_messages' '15')"
 export LOG_LEVEL="$(get_option 'log_level' 'info')"
+export HA_EXPOSE_LABEL="$(get_option 'ha_expose_label' 'agent')"
 export PYTHONPATH="${APP_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 
 cd "${APP_ROOT}"

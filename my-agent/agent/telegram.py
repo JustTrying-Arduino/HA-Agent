@@ -23,6 +23,9 @@ STATUS_TOOLS = {
     "web_search",
     "web_fetch",
     "exec",
+    "ha_search_entities",
+    "ha_get_state",
+    "ha_call_service",
 }
 TOOL_STATUS_LABELS = {
     "read_file": "Lecture de fichier...",
@@ -32,6 +35,9 @@ TOOL_STATUS_LABELS = {
     "web_search": "Recherche web...",
     "web_fetch": "Lecture d'une page web...",
     "exec": "Execution d'une commande...",
+    "ha_search_entities": "Recherche dans Home Assistant...",
+    "ha_get_state": "Lecture Home Assistant...",
+    "ha_call_service": "Commande Home Assistant...",
     "create_reminder": "Creation du rappel...",
     "list_reminders": "Consultation des rappels...",
     "update_reminder": "Mise a jour du rappel...",
