@@ -60,6 +60,7 @@ export PYTHONPATH="${APP_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 cd "${APP_ROOT}"
 
 log_info "SUPERVISOR_TOKEN set: $([ -n "${SUPERVISOR_TOKEN:-}" ] && echo yes || echo no)"
+log_info "Token-related env vars: $(env | grep -iE 'token|hassio|supervisor' | tr '\n' ' ')"
 log_info "Starting My Agent..."
 
 # --- Launch the agent ---
