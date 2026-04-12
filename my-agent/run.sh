@@ -60,6 +60,11 @@ export PYTHONPATH="${APP_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 cd "${APP_ROOT}"
 
 log_info "SUPERVISOR_TOKEN set: $([ -n "${SUPERVISOR_TOKEN:-}" ] && echo yes || echo no)"
+log_info "All env var names: $(env | cut -d= -f1 | sort | tr '\n' ' ')"
+log_info "Files in /run/: $(ls /run/ 2>/dev/null || echo 'empty')"
+if declare -F bashio::var.token >/dev/null 2>&1; then
+    log_info "bashio token set: $([ -n "$(bashio::var.token 2>/dev/null)" ] && echo yes || echo no)"
+fi
 log_info "Starting My Agent..."
 
 # --- Launch the agent ---
