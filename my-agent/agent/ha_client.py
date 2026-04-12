@@ -8,7 +8,7 @@ import aiohttp
 
 from agent.config import cfg
 
-BASE_URL = "http://supervisor/core/api"
+BASE_URL = "http://supervisor/core/api/"
 CACHE_TTL_SECONDS = 60
 HTTP_TIMEOUT_SECONDS = 15
 
