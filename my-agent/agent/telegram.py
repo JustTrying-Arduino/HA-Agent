@@ -183,7 +183,11 @@ async def _safe_delete_message(message):
 
 
 async def _finalize_response(update: Update, status_message, state: dict, text: str):
-    content = text or "(empty response)"
+    if not text or not text.strip():
+        await _safe_delete_message(status_message)
+        return
+
+    content = text
 
     if len(content) <= MAX_TELEGRAM_MSG:
         await _safe_edit_message(status_message, state, content)
