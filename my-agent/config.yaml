@@ -1,6 +1,6 @@
 name: "My Agent"
 description: "Minimalist AI agent with Telegram interface and tool execution"
-version: "0.3.10"
+version: "0.3.11"
 slug: "my-agent"
 url: "https://github.com/home-assistant/addons-example"
 
@@ -32,6 +32,7 @@ options:
   telegram_allowed_chat_ids: ""
   session_timeout_hours: 48
   max_session_messages: 15
+  include_recent_tool_calls: true
   log_level: "info"
   ha_expose_label: "agent"
 
@@ -46,5 +47,6 @@ schema:
   telegram_allowed_chat_ids: str
   session_timeout_hours: int
   max_session_messages: int
+  include_recent_tool_calls: bool
   log_level: list(debug|info|warning|error)
   ha_expose_label: str?

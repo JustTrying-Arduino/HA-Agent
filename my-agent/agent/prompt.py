@@ -1,6 +1,7 @@
 """System prompt assembly from workspace files."""
 
 import logging
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -9,12 +10,91 @@ from agent.config import cfg
 from agent.memory import get_recent_tool_calls
 
 logger = logging.getLogger(__name__)
+SKILL_SUMMARY_MAX_LEN = 160
 
 
 def _read_if_exists(path: Path) -> str | None:
     if path.exists():
         return path.read_text().strip()
     return None
+
+
+def _collapse_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _extract_markdown_section(text: str, title: str) -> str | None:
+    lines = text.splitlines()
+    target = f"## {title}".strip().lower()
+    in_section = False
+    collected: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.lower() == target:
+            in_section = True
+            continue
+        if in_section and stripped.startswith("#"):
+            break
+        if in_section:
+            collected.append(line)
+
+    section = "\n".join(collected).strip()
+    return section or None
+
+
+def _summarize_skill(skill_md: str) -> str:
+    purpose = _extract_markdown_section(skill_md, "Purpose")
+    if purpose:
+        return _truncate_summary(_collapse_whitespace(purpose))
+
+    use_when = _extract_markdown_section(skill_md, "Use This Skill When")
+    if use_when:
+        for line in use_when.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- "):
+                return _truncate_summary(_collapse_whitespace(stripped[2:]))
+
+    for line in skill_md.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("- "):
+            stripped = stripped[2:].strip()
+        return _truncate_summary(_collapse_whitespace(stripped))
+
+    return "No description available."
+
+
+def _truncate_summary(text: str) -> str:
+    if len(text) <= SKILL_SUMMARY_MAX_LEN:
+        return text.rstrip(" .")
+    return text[: SKILL_SUMMARY_MAX_LEN - 3].rstrip() + "..."
+
+
+def _build_skills_index(skills_dir: Path) -> str | None:
+    entries: list[str] = []
+    for skill_dir in sorted(skills_dir.iterdir()):
+        if not skill_dir.is_dir():
+            continue
+        skill_path = skill_dir / "SKILL.md"
+        skill_md = _read_if_exists(skill_path)
+        if not skill_md:
+            continue
+        summary = _summarize_skill(skill_md)
+        entries.append(
+            f"- {skill_dir.name}: {summary}. Read {skill_path} with read_file if needed."
+        )
+
+    if not entries:
+        return None
+
+    return (
+        "## Skills Index\n"
+        "- If a task may match a listed skill, read its SKILL.md with read_file before following it.\n"
+        "- Do not assume hidden skill details unless the file has been read.\n"
+        + "\n".join(entries)
+    )
 
 
 RECENT_TOOLS_MAX_AGE_HOURS = 3
@@ -81,19 +161,18 @@ def build_system_prompt(chat_id: int | None = None) -> str:
 
     skills_dir = ws / "skills"
     if skills_dir.exists():
-        for skill_dir in sorted(skills_dir.iterdir()):
-            if skill_dir.is_dir():
-                skill_md = _read_if_exists(skill_dir / "SKILL.md")
-                if skill_md:
-                    parts.append(f"## Skill: {skill_dir.name}\n{skill_md}")
+        skills_index = _build_skills_index(skills_dir)
+        if skills_index:
+            parts.append(skills_index)
 
     memory_md = _read_if_exists(ws / "MEMORY.md")
     if memory_md:
         parts.append(f"## Long-term Memory\n{memory_md}")
 
-    recent_tools = _format_recent_tools(chat_id)
-    if recent_tools:
-        parts.append(recent_tools)
+    if cfg.include_recent_tool_calls:
+        recent_tools = _format_recent_tools(chat_id)
+        if recent_tools:
+            parts.append(recent_tools)
 
     return "\n\n---\n\n".join(parts)
 

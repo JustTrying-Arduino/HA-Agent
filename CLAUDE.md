@@ -35,6 +35,7 @@ Le runtime est un process Python unique avec un seul event loop `asyncio`. Le bo
 - `cfg` dans `agent/config.py` est la source unique de configuration runtime.
 - Les timestamps sont stockes en UTC ISO 8601. L'heure locale sert au prompt et aux affichages.
 - Le projet reste sans framework agentique et sans build frontend.
+- Les skills ne sont pas injectees entierement dans le prompt: seul un index compact est expose, et le detail se lit a la demande via `read_file`.
 
 ### Add-on Home Assistant
 

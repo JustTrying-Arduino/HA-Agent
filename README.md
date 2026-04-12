@@ -108,6 +108,7 @@ Le dashboard est accessible via le panneau latéral de l'add-on dans HA.
 | `telegram_allowed_chat_ids` | `[]` | Chat IDs autorisés |
 | `session_timeout_hours` | `48` | Timeout de session en heures |
 | `max_session_messages` | `15` | Nombre max de messages en contexte |
+| `include_recent_tool_calls` | `true` | Injecte les récents tool calls dans le prompt. Améliore parfois la continuité à court terme, mais invalide plus souvent le prompt cache |
 | `log_level` | `info` | Niveau de log (debug, info, warning, error) |
 | `ha_expose_label` | `agent` | Label Home Assistant utilisé pour exposer les entités contrôlables par l'agent |
 
@@ -124,6 +125,8 @@ Les fichiers du workspace sont dans `/share/myagent/workspace/` :
 | `skills/` | Dossiers de skills (chacun avec un `SKILL.md`) |
 
 Tous ces fichiers sont éditables directement depuis File Editor dans HA.
+
+Le prompt système n'injecte pas le contenu complet des skills. Il injecte un index compact des skills disponibles avec une courte description et le chemin du fichier `SKILL.md`. L'agent lit ensuite le détail d'une skill à la demande via `read_file` si la tâche semble correspondre.
 
 ## Tools disponibles
 

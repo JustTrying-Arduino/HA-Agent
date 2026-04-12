@@ -29,6 +29,9 @@ configuration:
   max_session_messages:
     name: Max Session Messages
     description: Number of recent messages to keep in context
+  include_recent_tool_calls:
+    name: Include Recent Tool Calls in Prompt
+    description: Adds recent tool calls to the prompt for better short-term continuity, but may reduce prompt cache reuse.
   log_level:
     name: Log Level
     description: Logging verbosity (debug, info, warning, error)

@@ -25,9 +25,11 @@ Les fichiers présents dans `my-agent/workspace/` servent de templates initiaux 
 
 Le contenu du workspace est relu à chaque requête pour reconstruire le prompt système. Toute évolution d'un de ces fichiers a donc un impact direct et immédiat sur le comportement de l'agent, sans rebuild de l'add-on.
 
+`AGENT.md`, `USER.md`, `MEMORY.md` et `Prompt_Reminder.md` peuvent être injectés directement selon le type de run. Les skills, elles, ne sont pas injectées en entier: le prompt embarque seulement un index compact construit depuis leurs `SKILL.md`, puis l'agent lit le fichier complet à la demande via `read_file` si une skill semble pertinente.
+
 ## Relation avec la memoire recente
 
-Le workspace porte la mémoire durable. Le contexte opérationnel court terme, lui, vient des messages de session et des récents tool calls injectés par la boucle de prompt. Ces deux couches sont complémentaires et ne doivent pas être confondues.
+Le workspace porte la mémoire durable. Le contexte opérationnel court terme, lui, vient des messages de session et, si l'option add-on `include_recent_tool_calls` est activée, des récents tool calls injectés par la boucle de prompt. Ces deux couches sont complémentaires et ne doivent pas être confondues.
 
 ## Points d'attention
 

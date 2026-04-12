@@ -23,11 +23,28 @@ Le prompt est reconstruit à chaque requête à partir des fichiers du workspace
 1. contexte runtime, avec date, timezone et consignes liées au run;
 2. `AGENT.md`;
 3. `USER.md`;
-4. tous les `skills/*/SKILL.md`;
+4. un index compact des `skills/*/SKILL.md`;
 5. `MEMORY.md`;
 6. résumé des derniers tool calls récents pour le `chat_id` courant.
 
 Les blocs sont assemblés avec des séparateurs explicites. En mode rappel planifié, `Prompt_Reminder.md` est ajouté à la fin.
+
+## Index des skills
+
+Le prompt n'embarque pas le contenu complet des skills. Il injecte une section `Skills Index` qui liste chaque skill avec:
+
+- le nom du dossier;
+- une courte description;
+- le chemin absolu du `SKILL.md` à lire si besoin.
+
+La description injectée suit une règle déterministe:
+
+1. texte sous `## Purpose`;
+2. sinon premier bullet de `## Use This Skill When`;
+3. sinon première ligne non vide utile;
+4. sinon `No description available.`
+
+Le prompt rappelle explicitement à l'agent qu'il doit lire le `SKILL.md` avec `read_file` avant de suivre une skill dont il n'a que l'index.
 
 ## Gestion de session
 
@@ -43,6 +60,13 @@ Le prompt peut injecter les derniers tool calls du chat courant afin d'éviter l
 - âgés de moins de 3 heures.
 
 Ce mécanisme complète `MEMORY.md`: il sert au contexte opérationnel de court terme, pas à la mémoire durable.
+
+L'injection de cette section est contrôlée par l'option add-on `include_recent_tool_calls`:
+
+- `true`: la section `Recent Tool Calls` est ajoutée si des appels récents existent;
+- `false`: la section n'est jamais injectée.
+
+Le compromis est volontaire: activer cette section peut améliorer la continuité à court terme, mais fait varier le prompt système plus souvent et peut donc réduire l'efficacité du prompt caching.
 
 ## Journalisation des tokens
 
