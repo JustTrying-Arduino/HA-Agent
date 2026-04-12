@@ -66,11 +66,9 @@ def build_system_prompt(chat_id: int | None = None) -> str:
 
     if cfg.openai_model_light != cfg.openai_model:
         parts[-1] += (
-            f"\n- You are currently running on the lightweight model ({cfg.openai_model_light}). "
-            f"If this task requires advanced reasoning, complex analysis, long-form writing, "
-            f"or multi-step planning, use the escalate_model tool to switch to {cfg.openai_model}. "
-            f"For simple tasks (greetings, short answers, reminders, factual questions), "
-            f"answer directly without escalating."
+            f"\n- You are running on the lightweight model ({cfg.openai_model_light}). "
+            f"Use escalate_model before any web search/browsing or when the task will likely "
+            f"need 2 or more tool calls. Skip escalation for simple one-shot answers."
         )
 
     agent_md = _read_if_exists(ws / "AGENT.md")

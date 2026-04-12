@@ -156,3 +156,10 @@ Tous ces fichiers sont éditables directement depuis File Editor dans HA.
 | Base de données | SQLite (WAL) |
 | Scheduling | Scheduler interne + SQLite |
 | Image de base | ghcr.io/home-assistant/{arch}-base:3.22 |
+
+## Documentation interne
+
+La documentation de maintenance du projet est volontairement séparée du guide utilisateur:
+
+- [`CLAUDE.md`](./CLAUDE.md) : point d'entrée pour contribuer, avec règles globales et index documentaire
+- [`docs/fonctionnel/README.md`](./docs/fonctionnel/README.md) : documentation fonctionnelle thématique pour les IA et développeurs

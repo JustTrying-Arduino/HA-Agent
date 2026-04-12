@@ -6,10 +6,9 @@ from agent.tools import register
 @register(
     name="escalate_model",
     description=(
-        "Escalate to the more powerful LLM model for the rest of this turn. "
-        "Call this BEFORE answering when the task requires advanced reasoning, "
-        "complex multi-step planning, nuanced writing, or when you are not "
-        "confident in your ability to answer correctly. No parameters needed."
+        "Escalate to the stronger model for this turn. Use before any "
+        "web search/browsing or tasks likely to need 2+ tool calls. "
+        "No parameters."
     ),
     parameters={
         "type": "object",
