@@ -122,11 +122,14 @@ Les fichiers du workspace sont dans `/share/myagent/workspace/` :
 | `USER.md` | Profil utilisateur |
 | `MEMORY.md` | Mémoire long-terme (écrit par l'agent) |
 | `Prompt_Reminder.md` | Instructions additionnelles pour les déclenchements planifiés |
+| `chats/` | Contexte par conversation Telegram (`<chat_id>.md`) |
 | `skills/` | Dossiers de skills (chacun avec un `SKILL.md`) |
 
 Tous ces fichiers sont éditables directement depuis File Editor dans HA.
 
 Le prompt système n'injecte pas le contenu complet des skills. Il injecte un index compact des skills disponibles avec une courte description et le chemin du fichier `SKILL.md`. L'agent lit ensuite le détail d'une skill à la demande via `read_file` si la tâche semble correspondre.
+
+Pour personnaliser une conversation Telegram précise, créer un fichier `chats/<chat_id>.md` dans le workspace. Son contenu sera injecté uniquement pour ce chat.
 
 ## Tools disponibles
 

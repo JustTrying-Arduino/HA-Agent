@@ -105,3 +105,100 @@ class PromptTests(unittest.TestCase):
 
         self.assertNotIn("## Recent Tool Calls", prompt)
         self.assertNotIn("ha_get_state", prompt)
+
+    def test_build_system_prompt_injects_chat_context_for_matching_chat_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            (ws / "chats").mkdir()
+            (ws / "chats" / "123.md").write_text("Shared context for chat 123.")
+
+            old_workspace_path = cfg.workspace_path
+            old_include_recent_tool_calls = cfg.include_recent_tool_calls
+            try:
+                cfg.workspace_path = str(ws)
+                cfg.include_recent_tool_calls = False
+                prompt = build_system_prompt(chat_id=123)
+            finally:
+                cfg.workspace_path = old_workspace_path
+                cfg.include_recent_tool_calls = old_include_recent_tool_calls
+
+        self.assertIn("## Chat Context", prompt)
+        self.assertIn("- Current chat ID: 123", prompt)
+        self.assertIn("Shared context for chat 123.", prompt)
+
+    def test_build_system_prompt_skips_chat_context_for_other_chat_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            (ws / "chats").mkdir()
+            (ws / "chats" / "123.md").write_text("Shared context for chat 123.")
+
+            old_workspace_path = cfg.workspace_path
+            old_include_recent_tool_calls = cfg.include_recent_tool_calls
+            try:
+                cfg.workspace_path = str(ws)
+                cfg.include_recent_tool_calls = False
+                prompt = build_system_prompt(chat_id=456)
+            finally:
+                cfg.workspace_path = old_workspace_path
+                cfg.include_recent_tool_calls = old_include_recent_tool_calls
+
+        self.assertNotIn("## Chat Context", prompt)
+        self.assertNotIn("Shared context for chat 123.", prompt)
+
+    def test_build_system_prompt_skips_chat_context_when_chat_id_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            (ws / "chats").mkdir()
+            (ws / "chats" / "123.md").write_text("Shared context for chat 123.")
+
+            old_workspace_path = cfg.workspace_path
+            old_include_recent_tool_calls = cfg.include_recent_tool_calls
+            try:
+                cfg.workspace_path = str(ws)
+                cfg.include_recent_tool_calls = False
+                prompt = build_system_prompt(chat_id=None)
+            finally:
+                cfg.workspace_path = old_workspace_path
+                cfg.include_recent_tool_calls = old_include_recent_tool_calls
+
+        self.assertNotIn("## Chat Context", prompt)
+
+    def test_build_system_prompt_skips_empty_chat_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            (ws / "chats").mkdir()
+            (ws / "chats" / "123.md").write_text("   \n")
+
+            old_workspace_path = cfg.workspace_path
+            old_include_recent_tool_calls = cfg.include_recent_tool_calls
+            try:
+                cfg.workspace_path = str(ws)
+                cfg.include_recent_tool_calls = False
+                prompt = build_system_prompt(chat_id=123)
+            finally:
+                cfg.workspace_path = old_workspace_path
+                cfg.include_recent_tool_calls = old_include_recent_tool_calls
+
+        self.assertNotIn("## Chat Context", prompt)
+
+    def test_build_system_prompt_places_chat_context_between_user_profile_and_skills(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            (ws / "USER.md").write_text("Preferred language: French")
+            (ws / "chats").mkdir()
+            (ws / "chats" / "123.md").write_text("Shared context for chat 123.")
+            (ws / "skills" / "alpha").mkdir(parents=True)
+            (ws / "skills" / "alpha" / "SKILL.md").write_text("# Alpha\n\n## Purpose\nAlpha skill summary.")
+
+            old_workspace_path = cfg.workspace_path
+            old_include_recent_tool_calls = cfg.include_recent_tool_calls
+            try:
+                cfg.workspace_path = str(ws)
+                cfg.include_recent_tool_calls = False
+                prompt = build_system_prompt(chat_id=123)
+            finally:
+                cfg.workspace_path = old_workspace_path
+                cfg.include_recent_tool_calls = old_include_recent_tool_calls
+
+        self.assertLess(prompt.index("## User Profile"), prompt.index("## Chat Context"))
+        self.assertLess(prompt.index("## Chat Context"), prompt.index("## Skills Index"))

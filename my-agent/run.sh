@@ -38,10 +38,12 @@ APP_ROOT="/opt"
 
 # --- Create persistent directories ---
 mkdir -p "${WORKSPACE}/skills"
+mkdir -p "${WORKSPACE}/chats"
 
 # --- Copy templates on first startup (no overwrite) ---
 cp -n /usr/local/share/workspace/*.md "${WORKSPACE}/" 2>/dev/null || true
 cp -rn /usr/local/share/workspace/skills/. "${WORKSPACE}/skills/" 2>/dev/null || true
+cp -rn /usr/local/share/workspace/chats/. "${WORKSPACE}/chats/" 2>/dev/null || true
 
 # --- Read HA config → environment variables ---
 export OPENAI_API_KEY="$(get_option 'openai_api_key')"

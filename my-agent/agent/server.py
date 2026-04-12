@@ -34,6 +34,10 @@ MODEL_COSTS = {
 DEFAULT_COST = {"input": 3.0, "cached": 1.5, "output": 10.0}
 
 
+def _minute_key(chat_id: int, timestamp: str) -> tuple[int, str]:
+    return chat_id, timestamp[:16]
+
+
 async def handle_index(request: web.Request) -> web.Response:
     index_path = STATIC_DIR / "index.html"
     resp = web.FileResponse(index_path)
@@ -110,19 +114,35 @@ async def handle_messages(request: web.Request) -> web.Response:
 
     # Attach tool calls to messages
     if messages:
-        # Messages are DESC — first is newest, last is oldest
-        if len(messages) >= 2:
-            min_ts = messages[-1]["timestamp"]
-            max_ts = messages[0]["timestamp"]
+        min_minute = messages[-1]["timestamp"][:16]
+        max_minute = messages[0]["timestamp"][:16]
+        message_keys = {
+            _minute_key(message["chat_id"], message["timestamp"])
+            for message in messages
+        }
+
+        if chat_id:
             tool_rows = db.fetchall(
                 "SELECT * FROM tool_calls "
-                "WHERE chat_id = ? AND timestamp >= ? AND timestamp <= ? "
+                "WHERE chat_id = ? AND substr(timestamp, 1, 16) >= ? AND substr(timestamp, 1, 16) <= ? "
                 "ORDER BY timestamp DESC",
-                (messages[0]["chat_id"], min_ts, max_ts),
+                (int(chat_id), min_minute, max_minute),
             )
-            tool_calls = [dict(r) for r in tool_rows]
         else:
-            tool_calls = []
+            chat_ids = sorted({message["chat_id"] for message in messages})
+            placeholders = ",".join("?" for _ in chat_ids)
+            tool_rows = db.fetchall(
+                "SELECT * FROM tool_calls "
+                f"WHERE chat_id IN ({placeholders}) AND substr(timestamp, 1, 16) >= ? AND substr(timestamp, 1, 16) <= ? "
+                "ORDER BY timestamp DESC",
+                tuple(chat_ids) + (min_minute, max_minute),
+            )
+
+        tool_calls = [
+            dict(row)
+            for row in tool_rows
+            if _minute_key(row["chat_id"], row["timestamp"]) in message_keys
+        ]
 
         return web.json_response({"messages": messages, "tool_calls": tool_calls})
 
@@ -131,12 +151,34 @@ async def handle_messages(request: web.Request) -> web.Response:
 
 async def handle_tool_calls(request: web.Request) -> web.Response:
     limit = int(request.query.get("limit", "50"))
-    rows = db.fetchall(
-        "SELECT * FROM tool_calls ORDER BY timestamp DESC LIMIT ?",
-        (limit,),
-    )
+    chat_id = request.query.get("chat_id")
+    if chat_id:
+        rows = db.fetchall(
+            "SELECT * FROM tool_calls WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?",
+            (int(chat_id), limit),
+        )
+    else:
+        rows = db.fetchall(
+            "SELECT * FROM tool_calls ORDER BY timestamp DESC LIMIT ?",
+            (limit,),
+        )
     data = [dict(r) for r in rows]
     return web.json_response({"tool_calls": data})
+
+
+async def handle_chats(request: web.Request) -> web.Response:
+    rows = db.fetchall(
+        "SELECT chat_id, MAX(timestamp) AS last_activity "
+        "FROM ("
+        "  SELECT chat_id, timestamp FROM messages "
+        "  UNION ALL "
+        "  SELECT chat_id, timestamp FROM tool_calls"
+        ") activity "
+        "GROUP BY chat_id "
+        "ORDER BY last_activity DESC, chat_id DESC"
+    )
+    chats = [dict(r) for r in rows]
+    return web.json_response({"chats": chats})
 
 
 async def handle_reminders(request: web.Request) -> web.Response:
@@ -146,14 +188,19 @@ async def handle_reminders(request: web.Request) -> web.Response:
     return web.json_response({"reminders": reminders})
 
 
-async def start_server():
+def create_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/", handle_index)
     app.router.add_get("/api/stats", handle_stats)
+    app.router.add_get("/api/chats", handle_chats)
     app.router.add_get("/api/messages", handle_messages)
     app.router.add_get("/api/tool_calls", handle_tool_calls)
     app.router.add_get("/api/reminders", handle_reminders)
+    return app
 
+
+async def start_server():
+    app = create_app()
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", cfg.ingress_port)

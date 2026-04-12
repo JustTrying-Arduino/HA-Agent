@@ -21,6 +21,9 @@
   .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   .card { background: var(--surface); border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+  .subtabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .subtab { padding: 6px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; color: var(--text-dim); font-size: 0.85em; }
+  .subtab.active { background: rgba(10, 132, 255, 0.15); color: #fff; border-color: var(--accent); }
 
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
   .stat-box { background: var(--bg); border-radius: 8px; padding: 12px; }
@@ -35,6 +38,7 @@
   .msg-role { font-size: 0.75em; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
   .msg-role.user { background: var(--accent); color: #fff; }
   .msg-role.assistant { background: #5856d6; color: #fff; }
+  .msg-chat { font-size: 0.7em; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--text-dim); font-weight: 600; }
   .msg-time { font-size: 0.75em; color: var(--text-dim); }
   .msg-model { font-size: 0.65em; padding: 1px 6px; border-radius: 4px; background: rgba(255, 159, 10, 0.15); color: var(--orange); font-weight: 600; margin-left: 4px; }
   .msg-content { font-size: 0.9em; white-space: pre-wrap; word-break: break-word; }
@@ -139,6 +143,7 @@
 
 <!-- MESSAGES -->
 <div id="section-messages">
+  <div class="subtabs" id="messages-chat-tabs"></div>
   <div id="messages-container"></div>
   <button class="load-more" id="load-more-messages">Charger plus...</button>
 </div>
@@ -146,9 +151,10 @@
 <!-- TOOL CALLS -->
 <div id="section-tools">
   <div class="card">
+    <div class="subtabs" id="tools-chat-tabs"></div>
     <table>
-      <colgroup><col style="width:10%"><col style="width:15%"><col style="width:55%"><col style="width:8%"><col style="width:12%"></colgroup>
-      <thead><tr><th>Heure</th><th>Tool</th><th>Input</th><th>Status</th><th>Duree</th></tr></thead>
+      <colgroup><col style="width:10%"><col style="width:15%"><col style="width:15%"><col style="width:42%"><col style="width:8%"><col style="width:10%"></colgroup>
+      <thead><tr><th>Heure</th><th>Chat ID</th><th>Tool</th><th>Input</th><th>Status</th><th>Duree</th></tr></thead>
       <tbody id="tools-tbody"></tbody>
     </table>
   </div>
@@ -177,9 +183,15 @@
 const API = ".";
 let msgOffset = 0;
 const MSG_LIMIT = 50;
+let knownChats = [];
+let selectedChatId = "";
 
 // --- Mock data (used only when API is unreachable, i.e. local dev) ---
 const MOCK = {
+  chats: { chats: [
+    { chat_id: -1001234567890, last_activity: "2026-04-11T22:27:05Z" },
+    { chat_id: 123456789, last_activity: "2026-04-10T19:30:08Z" },
+  ]},
   stats: { data: [
     { period: "2026-04-11", model: "gpt-4o", input_tokens: 48200, output_tokens: 12400, cached_tokens: 31000, estimated_cost: 0.42 },
     { period: "2026-04-10", model: "gpt-4o", input_tokens: 35600, output_tokens: 9800, cached_tokens: 22000, estimated_cost: 0.31 },
@@ -187,30 +199,31 @@ const MOCK = {
   ]},
   messages: {
     messages: [
-      { role: "assistant", timestamp: "2026-04-11T22:27:05Z", content: "La température dans le salon est de 21.3°C avec une humidité de 45%." },
-      { role: "user", timestamp: "2026-04-11T22:27:00Z", content: "Quelle est la température dans le salon ?" },
-      { role: "assistant", timestamp: "2026-04-11T22:15:03Z", content: "C'est fait, la lumière du bureau est allumée 💡" },
-      { role: "user", timestamp: "2026-04-11T22:15:00Z", content: "[Message vocal transcrit]  Allume la lumière du bureau." },
-      { role: "assistant", timestamp: "2026-04-11T21:45:04Z", content: "Rappel créé : \"Sortir les poubelles\" programmé pour demain à 08:00." },
-      { role: "user", timestamp: "2026-04-11T21:45:00Z", content: "Programme un rappel pour sortir les poubelles demain à 8h." },
-      { role: "assistant", timestamp: "2026-04-10T19:30:08Z", content: "Il fait 14°C avec un ciel dégagé. Le vent souffle à 12 km/h. Pas de pluie prévue ce soir." },
-      { role: "user", timestamp: "2026-04-10T19:30:00Z", content: "Quel temps fait-il dehors ?" },
+      { chat_id: -1001234567890, role: "assistant", timestamp: "2026-04-11T22:27:05Z", content: "La température dans le salon est de 21.3°C avec une humidité de 45%." },
+      { chat_id: -1001234567890, role: "user", timestamp: "2026-04-11T22:27:00Z", content: "Quelle est la température dans le salon ?" },
+      { chat_id: -1001234567890, role: "assistant", timestamp: "2026-04-11T22:15:03Z", content: "C'est fait, la lumière du bureau est allumée 💡" },
+      { chat_id: -1001234567890, role: "user", timestamp: "2026-04-11T22:15:00Z", content: "[Message vocal transcrit]  Allume la lumière du bureau." },
+      { chat_id: 123456789, role: "assistant", timestamp: "2026-04-10T19:30:08Z", content: "Il fait 14°C avec un ciel dégagé. Le vent souffle à 12 km/h. Pas de pluie prévue ce soir." },
+      { chat_id: 123456789, role: "user", timestamp: "2026-04-10T19:30:00Z", content: "Quel temps fait-il dehors ?" },
+      { chat_id: -1001234567890, role: "assistant", timestamp: "2026-04-10T19:30:08Z", content: "Rappel créé : \"Sortir les poubelles\" programmé pour demain à 08:00." },
+      { chat_id: -1001234567890, role: "user", timestamp: "2026-04-10T19:30:00Z", content: "Programme un rappel pour sortir les poubelles demain à 8h." },
     ],
     tool_calls: [
-      { timestamp: "2026-04-11T22:27:02Z", tool_name: "exec", output_summary: "temperature: 21.3\nhumidity: 45", success: true, duration_ms: 180 },
-      { timestamp: "2026-04-11T22:15:02Z", tool_name: "exec", output_summary: "Service light.turn_on called", success: true, duration_ms: 95 },
-      { timestamp: "2026-04-11T21:45:02Z", tool_name: "create_reminder", output_summary: '{"id": 12, "title": "Sortir les poubelles", "status": "active"}', success: true, duration_ms: 15 },
+      { chat_id: -1001234567890, timestamp: "2026-04-11T22:27:02Z", tool_name: "exec", output_summary: "temperature: 21.3\nhumidity: 45", success: true, duration_ms: 180 },
+      { chat_id: -1001234567890, timestamp: "2026-04-11T22:15:02Z", tool_name: "exec", output_summary: "Service light.turn_on called", success: true, duration_ms: 95 },
+      { chat_id: -1001234567890, timestamp: "2026-04-10T19:30:02Z", tool_name: "create_reminder", output_summary: '{"id": 12, "title": "Sortir les poubelles", "status": "active"}', success: true, duration_ms: 15 },
+      { chat_id: 123456789, timestamp: "2026-04-10T19:30:02Z", tool_name: "web_fetch", output_summary: "current_weather: 14C clear", success: true, duration_ms: 420 },
     ]
   },
   tool_calls: { tool_calls: [
-    { timestamp: "2026-04-11T22:27:02Z", tool_name: "exec", input_summary: "{'command': 'curl -s http://supervisor/core/api/states/sensor.salon_temperature -H \"Authorization: Bearer $TOKEN\" | jq .state'}", success: true, duration_ms: 180 },
-    { timestamp: "2026-04-11T22:15:02Z", tool_name: "exec", input_summary: "{'command': 'curl -s -X POST http://supervisor/core/api/services/light/turn_on -H \"Authorization: Bearer $TOKEN\" -d {\"entity_id\": \"light.bureau\"}'}", success: true, duration_ms: 95 },
-    { timestamp: "2026-04-11T21:45:02Z", tool_name: "create_reminder", input_summary: "{'title': 'Sortir les poubelles', 'instruction': 'Envoyer un message : Sortir les poubelles !', 'schedule_kind': 'once', 'run_at': '2026-04-12 08:00'}", success: true, duration_ms: 15 },
-    { timestamp: "2026-04-10T19:30:03Z", tool_name: "web_fetch", input_summary: "{'url': 'https://api.open-meteo.com/v1/forecast?latitude=48.85&longitude=2.35&current_weather=true'}", success: true, duration_ms: 420 },
-    { timestamp: "2026-04-10T18:00:00Z", tool_name: "read_file", input_summary: "{'path': '/share/myagent/workspace/MEMORY.md'}", success: true, duration_ms: 8 },
-    { timestamp: "2026-04-10T14:22:00Z", tool_name: "exec", input_summary: "{'command': 'ls -la /share/myagent/workspace/skills/'}", success: true, duration_ms: 32 },
-    { timestamp: "2026-04-09T23:10:00Z", tool_name: "web_search", input_summary: "{'query': 'recette tarte aux pommes rapide'}", success: true, duration_ms: 1250 },
-    { timestamp: "2026-04-09T22:41:00Z", tool_name: "create_reminder", input_summary: "{'title': 'Proposition activités week-end (vendredi)', 'instruction': 'Exécuter le cron de vendredi du skill activity-planner : lire events.json, filtrer les événements du week-end et envoyer les suggestions'}", success: false, duration_ms: 6 },
+    { chat_id: -1001234567890, timestamp: "2026-04-11T22:27:02Z", tool_name: "exec", input_summary: "{'command': 'curl -s http://supervisor/core/api/states/sensor.salon_temperature -H \"Authorization: Bearer $TOKEN\" | jq .state'}", success: true, duration_ms: 180 },
+    { chat_id: -1001234567890, timestamp: "2026-04-11T22:15:02Z", tool_name: "exec", input_summary: "{'command': 'curl -s -X POST http://supervisor/core/api/services/light/turn_on -H \"Authorization: Bearer $TOKEN\" -d {\"entity_id\": \"light.bureau\"}'}", success: true, duration_ms: 95 },
+    { chat_id: -1001234567890, timestamp: "2026-04-10T19:30:02Z", tool_name: "create_reminder", input_summary: "{'title': 'Sortir les poubelles', 'instruction': 'Envoyer un message : Sortir les poubelles !', 'schedule_kind': 'once', 'run_at': '2026-04-12 08:00'}", success: true, duration_ms: 15 },
+    { chat_id: 123456789, timestamp: "2026-04-10T19:30:03Z", tool_name: "web_fetch", input_summary: "{'url': 'https://api.open-meteo.com/v1/forecast?latitude=48.85&longitude=2.35&current_weather=true'}", success: true, duration_ms: 420 },
+    { chat_id: 123456789, timestamp: "2026-04-10T18:00:00Z", tool_name: "read_file", input_summary: "{'path': '/share/myagent/workspace/MEMORY.md'}", success: true, duration_ms: 8 },
+    { chat_id: -1001234567890, timestamp: "2026-04-10T14:22:00Z", tool_name: "exec", input_summary: "{'command': 'ls -la /share/myagent/workspace/skills/'}", success: true, duration_ms: 32 },
+    { chat_id: 123456789, timestamp: "2026-04-09T23:10:00Z", tool_name: "web_search", input_summary: "{'query': 'recette tarte aux pommes rapide'}", success: true, duration_ms: 1250 },
+    { chat_id: -1001234567890, timestamp: "2026-04-09T22:41:00Z", tool_name: "create_reminder", input_summary: "{'title': 'Proposition activités week-end (vendredi)', 'instruction': 'Exécuter le cron de vendredi du skill activity-planner : lire events.json, filtrer les événements du week-end et envoyer les suggestions'}", success: false, duration_ms: 6 },
   ]},
   reminders: { reminders: [
     { id: 12, chat_id: 123456, status: "active", title: "Sortir les poubelles", instruction: "Envoyer un message : Sortir les poubelles !", next_run_at: "2026-04-12T06:00:00Z", last_run_at: null, archived_at: null },
@@ -272,30 +285,74 @@ function fmt(n) {
 
 document.getElementById("stats-period").addEventListener("change", loadStats);
 
+function getChatQueryParam() {
+  return selectedChatId ? `chat_id=${encodeURIComponent(selectedChatId)}` : "";
+}
+
+function chatMinuteKey(chatId, timestamp) {
+  return `${chatId}:${timestamp.substring(0, 16)}`;
+}
+
+function renderChatTabs(containerId) {
+  const container = document.getElementById(containerId);
+  const tabs = [{ label: "Tous", value: "" }, ...knownChats.map(chat => ({ label: String(chat.chat_id), value: String(chat.chat_id) }))];
+  container.innerHTML = tabs.map(tab => `
+    <button type="button" class="subtab${selectedChatId === tab.value ? " active" : ""}" data-chat-id="${escapeHtml(tab.value)}">
+      ${escapeHtml(tab.label)}
+    </button>
+  `).join("");
+
+  container.querySelectorAll(".subtab").forEach(button => {
+    button.addEventListener("click", () => {
+      selectedChatId = button.dataset.chatId || "";
+      renderAllChatTabs();
+      loadMessages(false);
+      loadToolCalls();
+    });
+  });
+}
+
+function renderAllChatTabs() {
+  renderChatTabs("messages-chat-tabs");
+  renderChatTabs("tools-chat-tabs");
+}
+
+async function loadChats() {
+  const json = await fetchOrMock(`${API}/api/chats`, "chats");
+  knownChats = json.chats || [];
+  renderAllChatTabs();
+}
+
 // --- Messages ---
 async function loadMessages(append) {
   const limit = MSG_LIMIT;
-  const json = await fetchOrMock(`${API}/api/messages?limit=${limit}`, "messages");
+  const chatParam = getChatQueryParam();
+  const query = chatParam ? `?limit=${limit}&${chatParam}` : `?limit=${limit}`;
+  const json = await fetchOrMock(`${API}/api/messages${query}`, "messages");
   const container = document.getElementById("messages-container");
+  const messages = selectedChatId ? (json.messages || []).filter(m => String(m.chat_id) === selectedChatId) : (json.messages || []);
+  const toolCalls = selectedChatId ? (json.tool_calls || []).filter(tc => String(tc.chat_id) === selectedChatId) : (json.tool_calls || []);
 
   if (!append) container.innerHTML = "";
 
   const toolMap = {};
-  (json.tool_calls || []).forEach(tc => {
-    const key = tc.timestamp.substring(0, 16);
+  toolCalls.forEach(tc => {
+    const key = chatMinuteKey(tc.chat_id, tc.timestamp);
     if (!toolMap[key]) toolMap[key] = [];
     toolMap[key].push(tc);
   });
 
   let html = "";
-  (json.messages || []).forEach(m => {
+  messages.forEach(m => {
     const time = new Date(m.timestamp).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const roleClass = m.role;
     const icon = m.role === "user" ? "👤" : "🤖";
     const modelBadge = (m.role === "assistant" && m.model) ? `<span class="msg-model">${escapeHtml(m.model)}</span>` : "";
+    const chatBadge = `<span class="msg-chat">Chat ${escapeHtml(String(m.chat_id))}</span>`;
     html += `<div class="msg">
       <div class="msg-header">
         <span class="msg-role ${roleClass}">${icon} ${m.role}</span>
+        ${chatBadge}
         <span class="msg-time">${time}</span>
         ${modelBadge}
       </div>
@@ -303,7 +360,7 @@ async function loadMessages(append) {
 
     // Attach tool calls near assistant messages
     if (m.role === "assistant") {
-      const key = m.timestamp.substring(0, 16);
+      const key = chatMinuteKey(m.chat_id, m.timestamp);
       const calls = toolMap[key] || [];
       calls.forEach(tc => {
         const statusClass = tc.success ? "" : "fail";
@@ -323,20 +380,24 @@ async function loadMessages(append) {
 
 // --- Tool Calls ---
 async function loadToolCalls() {
-  const json = await fetchOrMock(`${API}/api/tool_calls?limit=50`, "tool_calls");
+  const chatParam = getChatQueryParam();
+  const query = chatParam ? `?limit=50&${chatParam}` : "?limit=50";
+  const json = await fetchOrMock(`${API}/api/tool_calls${query}`, "tool_calls");
   const tbody = document.getElementById("tools-tbody");
+  const toolCalls = selectedChatId ? (json.tool_calls || []).filter(tc => String(tc.chat_id) === selectedChatId) : (json.tool_calls || []);
 
-  if (!json.tool_calls.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-dim)">Pas de tool calls.</td></tr>';
+  if (!toolCalls.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">Pas de tool calls.</td></tr>';
     return;
   }
 
   let html = "";
-  json.tool_calls.forEach(tc => {
+  toolCalls.forEach(tc => {
     const time = new Date(tc.timestamp).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const status = tc.success ? '<span class="success">✓</span>' : '<span class="failure">✗</span>';
     html += `<tr>
       <td>${time}</td>
+      <td>${tc.chat_id}</td>
       <td>${tc.tool_name}</td>
       <td class="table-text">${renderExpandableCell(tc.input_summary || "", { previewChars: 60 })}</td>
       <td>${status}</td>
@@ -416,7 +477,9 @@ function fmtDateTime(s) {
 
 // Initial load
 document.getElementById("reminders-status").addEventListener("change", loadReminders);
+document.getElementById("load-more-messages").addEventListener("click", () => loadMessages(false));
 loadStats();
+loadChats();
 loadMessages(false);
 loadToolCalls();
 loadReminders();

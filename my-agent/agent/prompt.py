@@ -97,6 +97,13 @@ def _build_skills_index(skills_dir: Path) -> str | None:
     )
 
 
+def _read_chat_context(ws: Path, chat_id: int | None) -> str | None:
+    if chat_id is None:
+        return None
+
+    return _read_if_exists(ws / "chats" / f"{chat_id}.md")
+
+
 RECENT_TOOLS_MAX_AGE_HOURS = 3
 
 
@@ -158,6 +165,14 @@ def build_system_prompt(chat_id: int | None = None) -> str:
     user_md = _read_if_exists(ws / "USER.md")
     if user_md:
         parts.append(f"## User Profile\n{user_md}")
+
+    chat_context_md = _read_chat_context(ws, chat_id)
+    if chat_context_md:
+        parts.append(
+            "## Chat Context\n"
+            f"- Current chat ID: {chat_id}\n"
+            f"{chat_context_md}"
+        )
 
     skills_dir = ws / "skills"
     if skills_dir.exists():

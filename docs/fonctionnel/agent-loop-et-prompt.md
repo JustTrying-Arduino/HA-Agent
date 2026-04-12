@@ -23,11 +23,14 @@ Le prompt est reconstruit à chaque requête à partir des fichiers du workspace
 1. contexte runtime, avec date, timezone et consignes liées au run;
 2. `AGENT.md`;
 3. `USER.md`;
-4. un index compact des `skills/*/SKILL.md`;
-5. `MEMORY.md`;
-6. résumé des derniers tool calls récents pour le `chat_id` courant.
+4. `chats/<chat_id>.md` si un contexte spécifique existe pour la conversation courante;
+5. un index compact des `skills/*/SKILL.md`;
+6. `MEMORY.md`;
+7. résumé des derniers tool calls récents pour le `chat_id` courant.
 
 Les blocs sont assemblés avec des séparateurs explicites. En mode rappel planifié, `Prompt_Reminder.md` est ajouté à la fin.
+
+Le contexte `chats/<chat_id>.md` est optionnel et ciblé par identifiant Telegram exact. Il permet d'ajouter des consignes propres à une conversation donnée sans polluer le prompt global de `AGENT.md` ou le profil durable de `USER.md`.
 
 ## Index des skills
 

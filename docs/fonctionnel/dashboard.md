@@ -7,8 +7,9 @@ Le dashboard expose une vue d'audit et de suivi de l'agent depuis Home Assistant
 ## Endpoints fonctionnels
 
 - `/api/stats?period=day|week|month`: agrégats de tokens et estimations de coût.
+- `/api/chats`: liste des `chat_id` connus et leur dernière activité.
 - `/api/messages?chat_id=X&limit=50`: historique des messages et tool calls associés.
-- `/api/tool_calls?limit=50`: audit des appels d'outils.
+- `/api/tool_calls?chat_id=X&limit=50`: audit des appels d'outils, filtrable par chat.
 - `/api/reminders?status=active|all`: liste des rappels.
 
 ## Comportement front
@@ -22,7 +23,9 @@ Le front est volontairement simple:
 ## Comportements UI notables
 
 - en-tête et barre d'onglets sticky;
+- sous-onglets de `chat_id` dans `Messages` et `Tool Calls`, avec vue globale `Tous`;
 - affichage des dates au format `dd/mm HH:MM`;
+- badge `Chat ID` visible sur les messages et colonne dédiée dans `Tool Calls`;
 - table des tool calls compacte avec détail extensible;
 - badge de modèle sur les réponses assistant quand l'information est disponible;
 - lecture des coûts tenant compte des cached tokens.

@@ -12,6 +12,7 @@ Les fichiers présents dans `my-agent/workspace/` servent de templates initiaux 
 - `USER.md`: informations durables sur l'utilisateur, préférences et habitudes stables.
 - `MEMORY.md`: contexte durable non strictement utilisateur, projets en cours, décisions à retenir.
 - `Prompt_Reminder.md`: consignes spécifiques aux runs déclenchés par rappel.
+- `chats/<chat_id>.md`: contexte durable spécifique à une conversation Telegram précise.
 - `skills/<name>/SKILL.md`: compétences étroites, actionnables, spécialisées.
 
 ## Règles d'usage
@@ -19,13 +20,14 @@ Les fichiers présents dans `my-agent/workspace/` servent de templates initiaux 
 - `AGENT.md` doit rester concis et stable.
 - `USER.md` ne doit contenir que des faits durables utiles à l'assistance future.
 - `MEMORY.md` ne remplace pas l'historique de session: il sert au long terme.
+- `chats/<chat_id>.md` ne doit contenir que des consignes stables ou récurrentes propres à ce chat.
 - Une skill doit être ciblée, autonome, et éviter de devenir un journal ou une mémoire fourre-tout.
 
 ## Relation avec le prompt
 
 Le contenu du workspace est relu à chaque requête pour reconstruire le prompt système. Toute évolution d'un de ces fichiers a donc un impact direct et immédiat sur le comportement de l'agent, sans rebuild de l'add-on.
 
-`AGENT.md`, `USER.md`, `MEMORY.md` et `Prompt_Reminder.md` peuvent être injectés directement selon le type de run. Les skills, elles, ne sont pas injectées en entier: le prompt embarque seulement un index compact construit depuis leurs `SKILL.md`, puis l'agent lit le fichier complet à la demande via `read_file` si une skill semble pertinente.
+`AGENT.md`, `USER.md`, `MEMORY.md`, `Prompt_Reminder.md` et éventuellement `chats/<chat_id>.md` peuvent être injectés directement selon le type de run. Les skills, elles, ne sont pas injectées en entier: le prompt embarque seulement un index compact construit depuis leurs `SKILL.md`, puis l'agent lit le fichier complet à la demande via `read_file` si une skill semble pertinente.
 
 ## Relation avec la memoire recente
 
