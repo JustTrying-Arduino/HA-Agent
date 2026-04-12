@@ -34,6 +34,8 @@ def main():
     # Init database
     init_db()
 
+    logger.info("SUPERVISOR_TOKEN present: %s", bool(cfg.supervisor_token))
+
     # Import tools to trigger registration
     import agent.tools.exec  # noqa: F401
     import agent.tools.files  # noqa: F401
@@ -47,7 +49,8 @@ def main():
     if cfg.supervisor_token:
         import agent.tools.homeassistant  # noqa: F401
 
-    logger.info("Tools registered, starting services...")
+    from agent.tools import TOOLS
+    logger.info("Tools registered (%d): %s", len(TOOLS), ", ".join(sorted(TOOLS.keys())))
 
     # Run everything
     asyncio.run(run_all())

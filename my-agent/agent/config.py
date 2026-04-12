@@ -44,7 +44,7 @@ class Config:
             max_session_messages=int(os.environ.get("MAX_SESSION_MESSAGES", "15")),
             log_level=os.environ.get("LOG_LEVEL", "info"),
             ha_expose_label=os.environ.get("HA_EXPOSE_LABEL", "agent"),
-            supervisor_token=os.environ.get("SUPERVISOR_TOKEN", ""),
+            supervisor_token=os.environ.get("SUPERVISOR_TOKEN", "") or os.environ.get("HASSIO_TOKEN", ""),
             timezone=os.environ.get("TZ", "UTC"),
         )
 
