@@ -1,12 +1,6 @@
 #!/usr/bin/with-contenv bashio
 set -e
 
-# Source bashio if available
-if [ -f /usr/lib/bashio/bashio.sh ]; then
-    # shellcheck source=/dev/null
-    source /usr/lib/bashio/bashio.sh
-fi
-
 log_info() {
     if declare -F bashio::log.info >/dev/null 2>&1; then
         bashio::log.info "$@"
