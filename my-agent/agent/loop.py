@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 LOOP_TIMEOUT = 300  # 5 minutes max per agent run
 ProgressCallback = Callable[[str, dict], Awaitable[None] | None]
+DEBUG_TEXT_LIMIT = 4000
 
 
 async def run_agent(
@@ -73,12 +74,15 @@ async def _run_agent_inner(
 
     start_time = time.time()
 
+    _log_llm_request(current_model, messages, _build_tool_kwargs().get("tools"))
+
     # First LLM call
     response = await client.chat.completions.create(
         model=current_model,
         messages=messages,
         **_build_tool_kwargs(),
     )
+    _log_llm_response(response)
     _add_tokens(current_model, response.usage.prompt_tokens,
                 response.usage.completion_tokens, _get_cached_tokens(response))
 
@@ -141,11 +145,13 @@ async def _run_agent_inner(
             )
 
         # Next LLM call (with updated model and tools)
+        _log_llm_request(current_model, messages, _build_tool_kwargs().get("tools"))
         response = await client.chat.completions.create(
             model=current_model,
             messages=messages,
             **_build_tool_kwargs(),
         )
+        _log_llm_response(response)
         _add_tokens(current_model, response.usage.prompt_tokens,
                     response.usage.completion_tokens, _get_cached_tokens(response))
 
@@ -194,3 +200,70 @@ async def _notify_progress(
             await maybe_awaitable
     except Exception:
         logger.exception("Progress callback failed for event=%s", event)
+
+
+def _log_llm_request(model: str, messages: list[dict], tools: list[dict] | None) -> None:
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+
+    logger.debug("LLM request model=%s tools=%d", model, len(tools or []))
+    for idx, message in enumerate(messages):
+        role = message.get("role", "?")
+        if role == "system":
+            logger.debug(
+                "LLM request message[%d] role=%s content=\n%s",
+                idx,
+                role,
+                _truncate(message.get("content", ""), DEBUG_TEXT_LIMIT),
+            )
+            continue
+
+        if role == "tool":
+            logger.debug(
+                "LLM request message[%d] role=%s tool_call_id=%s content=%s",
+                idx,
+                role,
+                message.get("tool_call_id", "-"),
+                _truncate(message.get("content", ""), DEBUG_TEXT_LIMIT),
+            )
+            continue
+
+        logger.debug(
+            "LLM request message[%d] role=%s content=%s",
+            idx,
+            role,
+            _truncate(message.get("content", ""), DEBUG_TEXT_LIMIT),
+        )
+
+    if tools:
+        logger.debug("LLM request tools schema=%s", _truncate(json.dumps(tools, ensure_ascii=True), DEBUG_TEXT_LIMIT))
+
+
+def _log_llm_response(response) -> None:
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+
+    try:
+        payload = response.model_dump(mode="json")
+    except Exception:
+        logger.debug("LLM raw response dump unavailable")
+        payload = None
+
+    if payload is not None:
+        logger.debug("LLM raw response=%s", _truncate(json.dumps(payload, ensure_ascii=True), DEBUG_TEXT_LIMIT))
+
+    try:
+        message = response.choices[0].message
+    except Exception:
+        return
+
+    if getattr(message, "content", None):
+        logger.debug("LLM response content=%s", _truncate(message.content, DEBUG_TEXT_LIMIT))
+
+    tool_calls = getattr(message, "tool_calls", None) or []
+    if tool_calls:
+        try:
+            tc_dump = [tc.model_dump(mode="json") for tc in tool_calls]
+            logger.debug("LLM response tool_calls=%s", _truncate(json.dumps(tc_dump, ensure_ascii=True), DEBUG_TEXT_LIMIT))
+        except Exception:
+            logger.debug("LLM response included %d tool call(s)", len(tool_calls))
