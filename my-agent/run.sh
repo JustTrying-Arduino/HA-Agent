@@ -14,9 +14,16 @@ OPTIONS_FILE="/data/options.json"
 get_option() {
     local key="$1"
     local default_value="${2:-}"
+    local missing_marker="__MY_AGENT_OPTION_MISSING__"
+    local value
 
     if [ -f "${OPTIONS_FILE}" ]; then
-        jq -er --arg key "${key}" '.[$key] // empty' "${OPTIONS_FILE}" 2>/dev/null || printf '%s' "${default_value}"
+        value="$(jq -r --arg key "${key}" --arg missing "${missing_marker}" 'if has($key) and .[$key] != null then .[$key] else $missing end' "${OPTIONS_FILE}" 2>/dev/null)"
+        if [ -n "${value}" ] && [ "${value}" != "${missing_marker}" ]; then
+            printf '%s' "${value}"
+        else
+            printf '%s' "${default_value}"
+        fi
     else
         printf '%s' "${default_value}"
     fi
