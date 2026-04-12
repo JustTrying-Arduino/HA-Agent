@@ -54,6 +54,7 @@ Consulter les fichiers suivants selon la zone modifiee:
 - [`docs/fonctionnel/agent-loop-et-prompt.md`](./docs/fonctionnel/agent-loop-et-prompt.md): boucle agent, prompt, sessions, historique recent.
 - [`docs/fonctionnel/routage-modele.md`](./docs/fonctionnel/routage-modele.md): escalation vers le modele principal et observabilite associee.
 - [`docs/fonctionnel/telegram.md`](./docs/fonctionnel/telegram.md): UX Telegram, placeholder, reponses, audio.
+- [`docs/fonctionnel/multi-chat.md`](./docs/fonctionnel/multi-chat.md): isolation par `chat_id`, contexte par conversation et vues dashboard multi-chat.
 - [`docs/fonctionnel/dashboard.md`](./docs/fonctionnel/dashboard.md): endpoints, comportements du dashboard et front.
 - [`docs/fonctionnel/homeassistant.md`](./docs/fonctionnel/homeassistant.md): integration Supervisor, tools HA natifs, filtrage par label et config associee.
 - [`docs/fonctionnel/reminders.md`](./docs/fonctionnel/reminders.md): rappels, scheduler, declenchements cron.
@@ -68,6 +69,7 @@ Consulter les fichiers suivants selon la zone modifiee:
 | Evolution de la boucle agent ou du prompt | `docs/fonctionnel/agent-loop-et-prompt.md` |
 | Changement de logique de routage LLM | `docs/fonctionnel/routage-modele.md` |
 | Changement visible dans Telegram | `docs/fonctionnel/telegram.md` |
+| Changement de logique multi-chat ou de contexte par conversation | `docs/fonctionnel/multi-chat.md` |
 | Changement dashboard ou API web | `docs/fonctionnel/dashboard.md` |
 | Changement integration Home Assistant native | `docs/fonctionnel/homeassistant.md` |
 | Changement rappels ou scheduler | `docs/fonctionnel/reminders.md` |
