@@ -32,6 +32,22 @@ Les tools rapides ou peu visibles n'ont pas vocation à générer de bruit côt�
 - Si la réponse tient dans un seul message Telegram, le placeholder est édité en réponse finale.
 - Si elle dépasse cette limite, le placeholder est supprimé puis la réponse est envoyée en morceaux.
 - Si l'agent génère une réponse vide (silence intentionnel), le placeholder est supprimé et aucun message n'apparaît dans Telegram.
+- Les réponses finales peuvent utiliser un sous-ensemble HTML Telegram piloté par le prompt: `<b>`, `<i>`, `<code>`, `<pre>`, `<a href="...">`.
+- Ce formatage riche ne s'applique qu'aux réponses finales. Les placeholders et statuts de progression restent en texte brut.
+- Le découpage des réponses longues préserve autant que possible les blocs de paragraphes et évite de casser un bloc HTML valide au milieu.
+- Si un bloc formaté dépasse la limite Telegram ou si Telegram rejette le rendu HTML, le bot retombe automatiquement en texte brut pour garantir la livraison du contenu.
+
+## Contrat de formatage
+
+Le prompt système autorise uniquement un HTML léger, adapté à Telegram:
+
+- `<b>` pour de courts libellés ou micro-titres;
+- `<i>` pour une emphase légère;
+- `<code>` pour commandes, chemins, variables et identifiants;
+- `<pre>` pour de courts blocs shell, log ou code;
+- `<a href="...">` pour les liens.
+
+Le backend ne tente pas de "réparer" un HTML libre ou arbitraire. Il applique le rendu demandé, puis bascule en texte brut si l'envoi ou l'édition échoue.
 
 ## Messages vocaux
 

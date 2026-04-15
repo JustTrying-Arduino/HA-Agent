@@ -23,6 +23,12 @@ Quand un rappel arrive à échéance, le scheduler reconstruit un message de con
 
 Ce message est transmis à `run_agent(chat_id, context, cron=True)` sans callback de progression. Le mode `cron=True` ajoute les consignes de `Prompt_Reminder.md` au prompt système.
 
+La réponse finale du rappel est ensuite envoyée au chat d'origine avec le même pipeline de rendu que les réponses Telegram interactives:
+
+- sous-ensemble HTML Telegram léger autorisé dans la réponse finale;
+- découpage par blocs pour respecter la limite de taille des messages;
+- fallback automatique en texte brut si un rendu HTML est invalide ou trop volumineux.
+
 ## Cycle de vie
 
 - Un rappel ponctuel est archivé après exécution.
