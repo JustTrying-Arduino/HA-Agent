@@ -38,7 +38,7 @@ Le runtime est un process Python unique avec un seul event loop `asyncio`. Le bo
 
 ### Documentation
 
-- `CLAUDE.md` est le hub de contribution: regles globales, conventions et index documentaire.
+- `AGENTS.md` est le hub de contribution: regles globales, conventions et index documentaire.
 - La documentation fonctionnelle detaillee vit dans `docs/fonctionnel/`.
 - Toute evolution fonctionnelle doit mettre a jour, dans le meme changement, le ou les fichiers concernes dans `docs/fonctionnel/`, ainsi que leur index si le perimetre documentaire change.
 - Si une evolution touche plusieurs themes, mettre a jour tous les fichiers impactes, pas seulement le plus proche.
