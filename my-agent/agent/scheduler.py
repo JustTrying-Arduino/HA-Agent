@@ -7,38 +7,27 @@ import logging
 
 from agent.loop import run_agent
 from agent.reminders import get_due_reminders, mark_executed, purge_archived_reminders
+from agent.telegram import build_telegram_chunks, _run_telegram_request
 
 logger = logging.getLogger(__name__)
 
 SCHEDULER_POLL_SECONDS = 15
-MAX_TELEGRAM_MSG = 4096
 
 
 async def send_text(bot, chat_id: int, text: str):
     content = text or "(empty response)"
-    if len(content) <= MAX_TELEGRAM_MSG:
-        await bot.send_message(chat_id=chat_id, text=content)
-        return
-
-    chunks = []
-    current = ""
-    for paragraph in content.split("\n\n"):
-        if len(current) + len(paragraph) + 2 > MAX_TELEGRAM_MSG:
-            if current:
-                chunks.append(current.strip())
-            current = paragraph
-        else:
-            current = current + "\n\n" + paragraph if current else paragraph
-
-    if current:
-        chunks.append(current.strip())
-
+    chunks = build_telegram_chunks(content)
     for chunk in chunks:
-        while len(chunk) > MAX_TELEGRAM_MSG:
-            await bot.send_message(chat_id=chat_id, text=chunk[:MAX_TELEGRAM_MSG])
-            chunk = chunk[MAX_TELEGRAM_MSG:]
-        if chunk:
-            await bot.send_message(chat_id=chat_id, text=chunk)
+        await _run_telegram_request(
+            lambda text, parse_mode=None: bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode=parse_mode,
+            ),
+            chunk["text"],
+            chunk["parse_mode"],
+            "Failed to send Telegram scheduler message",
+        )
 
 
 async def process_due_reminders(bot):

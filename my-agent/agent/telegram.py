@@ -1,10 +1,13 @@
 """Telegram bot: polling, message dispatch (text + audio)."""
 
+from html import unescape
 import os
 import tempfile
 import logging
+import re
 
 from telegram import Update
+from telegram.constants import ParseMode
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
 from agent.config import cfg
@@ -16,6 +19,10 @@ logger = logging.getLogger(__name__)
 MAX_TELEGRAM_MSG = 4096
 INITIAL_STATUS_TEXT = "En reflexion..."
 DEFAULT_TOOL_STATUS = "Traitement en cours..."
+SUPPORTED_HTML_TAG_RE = re.compile(
+    r"</?(?:b|i|code|pre)\s*>|<a\s+href=\"[^\"]*\">|</a>",
+    re.IGNORECASE,
+)
 STATUS_TOOLS = {
     "read_file",
     "write_file",
@@ -111,42 +118,123 @@ async def _handle_audio(update: Update) -> str | None:
         return None
 
 
-async def _send_response(update: Update, text: str):
-    """Send a response, splitting into chunks if needed."""
-    if len(text) <= MAX_TELEGRAM_MSG:
-        await update.message.reply_text(text)
-        return
+def _prepare_formatted_response(text: str) -> dict[str, str | None]:
+    html_text = text or ""
+    return {
+        "html_text": html_text,
+        "plain_text": _strip_supported_html(html_text),
+        "parse_mode": ParseMode.HTML,
+    }
 
-    # Split on paragraph boundaries
-    chunks = []
-    current = ""
-    for paragraph in text.split("\n\n"):
-        if len(current) + len(paragraph) + 2 > MAX_TELEGRAM_MSG:
-            if current:
-                chunks.append(current.strip())
-            current = paragraph
-        else:
-            current = current + "\n\n" + paragraph if current else paragraph
 
-    if current:
-        chunks.append(current.strip())
+def _strip_supported_html(text: str) -> str:
+    return unescape(SUPPORTED_HTML_TAG_RE.sub("", text or ""))
 
-    # Fallback: split on hard limit if a single paragraph exceeds limit
-    final_chunks = []
+
+def _contains_supported_html(text: str) -> bool:
+    return bool(SUPPORTED_HTML_TAG_RE.search(text or ""))
+
+
+def _split_html_blocks(text: str) -> list[str]:
+    if not text:
+        return []
+
+    blocks: list[str] = []
+    current: list[str] = []
+    i = 0
+    lowered = text.lower()
+    in_pre = False
+
+    while i < len(text):
+        if lowered.startswith("<pre>", i):
+            in_pre = True
+            current.append(text[i:i + 5])
+            i += 5
+            continue
+        if lowered.startswith("</pre>", i):
+            in_pre = False
+            current.append(text[i:i + 6])
+            i += 6
+            continue
+        if not in_pre and text.startswith("\n\n", i):
+            blocks.append("".join(current))
+            current = []
+            i += 2
+            continue
+
+        current.append(text[i])
+        i += 1
+
+    blocks.append("".join(current))
+    return blocks
+
+
+def _split_plain_text(text: str) -> list[str]:
+    return [text[i:i + MAX_TELEGRAM_MSG] for i in range(0, len(text), MAX_TELEGRAM_MSG)] or [""]
+
+
+def build_telegram_chunks(text: str) -> list[dict[str, str | None]]:
+    prepared = _prepare_formatted_response(text)
+    blocks = _split_html_blocks(prepared["html_text"])
+    if not blocks:
+        return []
+
+    chunks: list[dict[str, str | None]] = []
+    current_html = ""
+
+    for block in blocks:
+        if len(block) <= MAX_TELEGRAM_MSG:
+            candidate = f"{current_html}\n\n{block}" if current_html else block
+            if current_html and len(candidate) > MAX_TELEGRAM_MSG:
+                chunks.append({"text": current_html, "parse_mode": ParseMode.HTML})
+                current_html = block
+            else:
+                current_html = candidate
+            continue
+
+        if current_html:
+            chunks.append({"text": current_html, "parse_mode": ParseMode.HTML})
+            current_html = ""
+
+        plain_block = _strip_supported_html(block)
+        source = plain_block if _contains_supported_html(block) else block
+        for part in _split_plain_text(source):
+            chunks.append({"text": part, "parse_mode": None})
+
+    if current_html:
+        chunks.append({"text": current_html, "parse_mode": ParseMode.HTML})
+
+    return chunks
+
+
+async def _run_telegram_request(send_func, text: str, parse_mode: str | None, action_label: str) -> tuple[str, str | None]:
+    try:
+        await send_func(text=text, parse_mode=parse_mode)
+        return text, parse_mode
+    except Exception:
+        if parse_mode == ParseMode.HTML:
+            logger.warning("%s failed with HTML, retrying as plain text", action_label, exc_info=True)
+            fallback_text = _strip_supported_html(text)
+            await send_func(text=fallback_text, parse_mode=None)
+            return fallback_text, None
+        raise
+
+
+async def _send_response(update: Update, chunks: list[dict[str, str | None]]):
+    """Send prepared response chunks."""
     for chunk in chunks:
-        while len(chunk) > MAX_TELEGRAM_MSG:
-            final_chunks.append(chunk[:MAX_TELEGRAM_MSG])
-            chunk = chunk[MAX_TELEGRAM_MSG:]
-        if chunk:
-            final_chunks.append(chunk)
-
-    for chunk in final_chunks:
-        await update.message.reply_text(chunk)
+        await _run_telegram_request(
+            lambda text, parse_mode=None: update.message.reply_text(text, parse_mode=parse_mode),
+            chunk["text"],
+            chunk["parse_mode"],
+            "Failed to send Telegram reply",
+        )
 
 
 def _build_progress_callback(status_message):
     state = {
         "current_text": INITIAL_STATUS_TEXT,
+        "current_parse_mode": None,
     }
 
     async def progress_callback(event: str, payload: dict):
@@ -163,14 +251,21 @@ def _tool_status_text(tool_name: str | None) -> str:
     return f"Outil en cours : {label}"
 
 
-async def _safe_edit_message(message, state: dict, text: str):
+async def _safe_edit_message(message, state: dict, text: str, parse_mode: str | None = None):
     current = state.get("current_text")
-    if current == text:
+    current_parse_mode = state.get("current_parse_mode")
+    if current == text and current_parse_mode == parse_mode:
         return
 
     try:
-        await message.edit_text(text)
-        state["current_text"] = text
+        rendered_text, rendered_parse_mode = await _run_telegram_request(
+            lambda text, parse_mode=None: message.edit_text(text, parse_mode=parse_mode),
+            text,
+            parse_mode,
+            "Failed to edit Telegram message",
+        )
+        state["current_text"] = rendered_text
+        state["current_parse_mode"] = rendered_parse_mode
     except Exception:
         logger.exception("Failed to edit Telegram status message")
 
@@ -187,11 +282,11 @@ async def _finalize_response(update: Update, status_message, state: dict, text: 
         await _safe_delete_message(status_message)
         return
 
-    content = text
-
-    if len(content) <= MAX_TELEGRAM_MSG:
-        await _safe_edit_message(status_message, state, content)
+    chunks = build_telegram_chunks(text)
+    if len(chunks) == 1:
+        chunk = chunks[0]
+        await _safe_edit_message(status_message, state, chunk["text"], parse_mode=chunk["parse_mode"])
         return
 
     await _safe_delete_message(status_message)
-    await _send_response(update, content)
+    await _send_response(update, chunks)
