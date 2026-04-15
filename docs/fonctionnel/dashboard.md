@@ -6,7 +6,7 @@ Le dashboard expose une vue d'audit et de suivi de l'agent depuis Home Assistant
 
 ## Structure générale
 
-Le front est volontairement simple: un seul fichier HTML avec JavaScript natif, sans framework ni build step. Les URLs API sont relatives pour rester compatibles avec l'ingress Home Assistant. L'en-tête et la barre d'onglets sont sticky.
+Le front est volontairement simple: un seul fichier HTML avec JavaScript natif, sans framework ni build step. Les URLs API sont relatives pour rester compatibles avec l'ingress Home Assistant. L'en-tête et la barre d'onglets sont sticky. L'onglet Tokens peut charger `Chart.js` côté client pour enrichir la visualisation, mais doit rester exploitable sans ce script grâce au rendu texte de secours.
 
 Quatre onglets principaux:
 
@@ -17,6 +17,12 @@ Quatre onglets principaux:
 **Objectif:** suivre la consommation de tokens et les coûts estimés par modèle et par période.
 
 **Sélecteur de période:** jour / semaine / mois (appel à `/api/stats?period=day|week|month`).
+
+**Visualisation principale:** si `Chart.js` est disponible, le dashboard affiche au-dessus des cartes un graphique combiné:
+- barres empilées par modèle pour `input non cache`, `cached` et `output`;
+- courbe de coût estimé agrégé par période.
+
+**Fallback:** si la librairie de graphique n'est pas disponible, l'onglet continue d'afficher uniquement les cartes textuelles sans bloquer le reste du dashboard.
 
 **Données affichées par entrée:**
 - période et modèle;

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>My Agent — Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #1c1c1e; --surface: #2c2c2e; --border: #3a3a3c;
@@ -138,6 +139,9 @@
       <option value="month">Par mois</option>
     </select>
   </div>
+  <div class="card" id="stats-chart-card" style="display:none">
+    <canvas id="stats-chart" height="120"></canvas>
+  </div>
   <div id="stats-container"></div>
 </div>
 
@@ -181,6 +185,7 @@
 
 <script>
 const API = ".";
+let statsChart = null;
 let msgOffset = 0;
 const MSG_LIMIT = 50;
 let knownChats = [];
@@ -192,10 +197,29 @@ const MOCK = {
     { chat_id: -1001234567890, last_activity: "2026-04-11T22:27:05Z" },
     { chat_id: 123456789, last_activity: "2026-04-10T19:30:08Z" },
   ]},
-  stats: { data: [
-    { period: "2026-04-11", model: "gpt-4o", input_tokens: 48200, output_tokens: 12400, cached_tokens: 31000, estimated_cost: 0.42 },
-    { period: "2026-04-10", model: "gpt-4o", input_tokens: 35600, output_tokens: 9800, cached_tokens: 22000, estimated_cost: 0.31 },
-    { period: "2026-04-09", model: "gpt-4o", input_tokens: 61000, output_tokens: 15200, cached_tokens: 40500, estimated_cost: 0.58 },
+  stats_day: { data: [
+    { period: "2026-04-11", model: "gpt-4o",     input_tokens: 48200, output_tokens: 12400, cached_tokens: 31000, estimated_cost: 0.42 },
+    { period: "2026-04-11", model: "gpt-4o-mini", input_tokens: 21000, output_tokens:  5800, cached_tokens:  9500, estimated_cost: 0.05 },
+    { period: "2026-04-10", model: "gpt-4o",     input_tokens: 35600, output_tokens:  9800, cached_tokens: 22000, estimated_cost: 0.31 },
+    { period: "2026-04-10", model: "gpt-4o-mini", input_tokens: 18400, output_tokens:  4200, cached_tokens:  7800, estimated_cost: 0.04 },
+    { period: "2026-04-09", model: "gpt-4o",     input_tokens: 61000, output_tokens: 15200, cached_tokens: 40500, estimated_cost: 0.58 },
+    { period: "2026-04-09", model: "gpt-4o-mini", input_tokens: 27500, output_tokens:  6900, cached_tokens: 12000, estimated_cost: 0.07 },
+  ]},
+  stats_week: { data: [
+    { period: "2026-W15", model: "gpt-4o",     input_tokens: 210000, output_tokens: 54000, cached_tokens: 138000, estimated_cost: 1.87 },
+    { period: "2026-W15", model: "gpt-4o-mini", input_tokens:  92000, output_tokens: 23000, cached_tokens:  41000, estimated_cost: 0.22 },
+    { period: "2026-W14", model: "gpt-4o",     input_tokens: 175000, output_tokens: 44000, cached_tokens: 112000, estimated_cost: 1.54 },
+    { period: "2026-W14", model: "gpt-4o-mini", input_tokens:  68000, output_tokens: 17500, cached_tokens:  29000, estimated_cost: 0.16 },
+    { period: "2026-W13", model: "gpt-4o",     input_tokens: 241000, output_tokens: 61000, cached_tokens: 158000, estimated_cost: 2.21 },
+    { period: "2026-W13", model: "gpt-4o-mini", input_tokens: 105000, output_tokens: 27000, cached_tokens:  48000, estimated_cost: 0.26 },
+  ]},
+  stats_month: { data: [
+    { period: "2026-04", model: "gpt-4o",     input_tokens:  820000, output_tokens: 208000, cached_tokens: 530000, estimated_cost: 7.24 },
+    { period: "2026-04", model: "gpt-4o-mini", input_tokens:  360000, output_tokens:  92000, cached_tokens: 162000, estimated_cost: 0.87 },
+    { period: "2026-03", model: "gpt-4o",     input_tokens: 1050000, output_tokens: 267000, cached_tokens: 680000, estimated_cost: 9.41 },
+    { period: "2026-03", model: "gpt-4o-mini", input_tokens:  430000, output_tokens: 110000, cached_tokens: 195000, estimated_cost: 1.04 },
+    { period: "2026-02", model: "gpt-4o",     input_tokens:  690000, output_tokens: 175000, cached_tokens: 440000, estimated_cost: 6.10 },
+    { period: "2026-02", model: "gpt-4o-mini", input_tokens:  280000, output_tokens:  72000, cached_tokens: 128000, estimated_cost: 0.67 },
   ]},
   messages: {
     messages: [
@@ -256,12 +280,78 @@ document.querySelectorAll(".tab").forEach(tab => {
 // --- Stats ---
 async function loadStats() {
   const period = document.getElementById("stats-period").value;
-  const json = await fetchOrMock(`${API}/api/stats?period=${period}`, "stats");
+  const json = await fetchOrMock(`${API}/api/stats?period=${period}`, `stats_${period}`);
   const container = document.getElementById("stats-container");
+  const chartCard = document.getElementById("stats-chart-card");
+  const chartAvailable = typeof window.Chart === "function";
 
   if (!json.data.length) {
     container.innerHTML = '<div class="card"><p style="color:var(--text-dim)">Pas encore de donnees.</p></div>';
+    if (statsChart) {
+      statsChart.destroy();
+      statsChart = null;
+    }
+    chartCard.style.display = "none";
     return;
+  }
+
+  // Build periods and model list
+  const periods = [...new Set(json.data.map(d => d.period))].sort();
+  const models = [...new Set(json.data.map(d => d.model))];
+  const dataIndex = {};
+  json.data.forEach(d => { dataIndex[`${d.period}|${d.model}`] = d; });
+
+  const MODEL_COLORS = [
+    { input: "rgba(10,132,255,0.8)",  cached: "rgba(48,209,88,0.8)",  output: "rgba(88,86,214,0.8)"  },
+    { input: "rgba(255,159,10,0.8)",  cached: "rgba(255,214,10,0.8)", output: "rgba(255,69,58,0.8)"   },
+    { input: "rgba(100,210,255,0.8)", cached: "rgba(50,173,86,0.8)",  output: "rgba(148,82,255,0.8)"  },
+  ];
+
+  const datasets = [];
+  models.forEach((model, i) => {
+    const c = MODEL_COLORS[i % MODEL_COLORS.length];
+    const stack = `tokens-${model}`;
+    const get = (p, key) => { const d = dataIndex[`${p}|${model}`]; return d ? d[key] : 0; };
+    datasets.push(
+      { type: "bar", label: `${model} Input non cache`,  data: periods.map(p => get(p, "input_tokens") - get(p, "cached_tokens")), backgroundColor: c.input,  stack, yAxisID: "y" },
+      { type: "bar", label: `${model} Cached`, data: periods.map(p => get(p, "cached_tokens")),  backgroundColor: c.cached, stack, yAxisID: "y" },
+      { type: "bar", label: `${model} Output`, data: periods.map(p => get(p, "output_tokens")),  backgroundColor: c.output, stack, yAxisID: "y" },
+    );
+  });
+
+  const costByPeriod = {};
+  json.data.forEach(d => { costByPeriod[d.period] = (costByPeriod[d.period] || 0) + d.estimated_cost; });
+  datasets.push({
+    type: "line", label: "Coût ($)", data: periods.map(p => costByPeriod[p] || 0),
+    borderColor: "#ff9f0a", backgroundColor: "rgba(255,159,10,0.1)", pointBackgroundColor: "#ff9f0a",
+    borderWidth: 2, tension: 0.3, fill: true, yAxisID: "y2",
+  });
+
+  if (chartAvailable) {
+    chartCard.style.display = "";
+    if (statsChart) statsChart.destroy();
+    statsChart = new Chart(document.getElementById("stats-chart").getContext("2d"), {
+      data: { labels: periods, datasets },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { labels: { color: "#f5f5f7", font: { size: 11 } } },
+          tooltip: { callbacks: { label: ctx => ctx.dataset.yAxisID === "y2" ? ` Coût: $${ctx.parsed.y.toFixed(4)}` : ` ${ctx.dataset.label}: ${fmt(ctx.parsed.y)}` } },
+        },
+        scales: {
+          x: { ticks: { color: "#8e8e93", font: { size: 10 } }, grid: { color: "rgba(255,255,255,0.05)" } },
+          y: { stacked: true, position: "left", ticks: { color: "#8e8e93", font: { size: 10 }, callback: v => fmt(v) }, grid: { color: "rgba(255,255,255,0.05)" } },
+          y2: { position: "right", ticks: { color: "#ff9f0a", font: { size: 10 }, callback: v => "$" + v.toFixed(3) }, grid: { display: false } },
+        },
+      },
+    });
+  } else {
+    if (statsChart) {
+      statsChart.destroy();
+      statsChart = null;
+    }
+    chartCard.style.display = "none";
   }
 
   let html = '<div class="stats-grid">';
