@@ -51,7 +51,6 @@ Le projet ne sandboxe pas les tools à l'intérieur du conteneur. Cette liberté
 ## Visibilité côté utilisateur
 
 Tous les tools ne sont pas visibles depuis Telegram. Les messages de progression utilisateur reposent sur un mapping court et lisible vers une petite sélection de tools lents ou significatifs.
-Par défaut, cela couvre surtout la lecture de fichier, la recherche ou lecture web, ainsi que la lecture d'état et les commandes Home Assistant.
 
 ## Quand documenter ici
 

@@ -20,9 +20,9 @@ Le comportement recherché est une UX sobre: un seul placeholder, peu de bruit, 
 
 Le bot envoie immédiatement un court message de type `En reflexion...` pour signaler la prise en charge. Ce message peut être réutilisé pour afficher des phases lentes comme:
 
-- lecture de fichier;
 - recherche web;
 - récupération de page web;
+- exécution shell.
 - lecture ou commande Home Assistant.
 
 Les tools rapides ou peu visibles n'ont pas vocation à générer de bruit côté Telegram.
