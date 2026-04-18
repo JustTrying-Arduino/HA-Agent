@@ -160,16 +160,16 @@ def build_system_prompt(chat_id: int | None = None) -> str:
 
     agent_md = _read_if_exists(ws / "AGENT.md")
     if agent_md:
-        parts.append(agent_md)
+        parts.append(f"## AGENT.md\n{agent_md}")
 
     user_md = _read_if_exists(ws / "USER.md")
     if user_md:
-        parts.append(f"## User Profile\n{user_md}")
+        parts.append(f"## USER.md\n{user_md}")
 
     chat_context_md = _read_chat_context(ws, chat_id)
     if chat_context_md:
         parts.append(
-            "## Chat Context\n"
+            "## Current Chat Specific Context\n"
             f"- Current chat ID: {chat_id}\n"
             f"{chat_context_md}"
         )
@@ -182,7 +182,7 @@ def build_system_prompt(chat_id: int | None = None) -> str:
 
     memory_md = _read_if_exists(ws / "MEMORY.md")
     if memory_md:
-        parts.append(f"## Long-term Memory\n{memory_md}")
+        parts.append(f"## MEMORY.md\n{memory_md}")
 
     if cfg.include_recent_tool_calls:
         recent_tools = _format_recent_tools(chat_id)
@@ -198,5 +198,5 @@ def build_cron_prompt(chat_id: int | None = None) -> str:
     ws = Path(cfg.workspace_path)
     reminder_md = _read_if_exists(ws / "Prompt_Reminder.md")
     if reminder_md:
-        return base + "\n\n---\n\n## Reminder Trigger Instructions\n" + reminder_md
+        return base + "\n\n---\n\n## Prompt_Reminder.md\n" + reminder_md
     return base

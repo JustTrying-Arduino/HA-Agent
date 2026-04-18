@@ -30,6 +30,8 @@ Le prompt est reconstruit à chaque requête à partir des fichiers du workspace
 
 Les blocs sont assemblés avec des séparateurs explicites.
 
+Les blocs injectés depuis des fichiers workspace sont nommés par leur fichier source dans le prompt final pour `AGENT.md`, `USER.md`, `MEMORY.md` et `Prompt_Reminder.md`. Le contexte spécifique au chat courant conserve un intitulé métier dédié: `Current Chat Specific Context`.
+
 ## Historique de session
 
 À chaque appel, le LLM reçoit le prompt système suivi de l'historique de session. La session contient les derniers messages `user` et `assistant` non archivés du `chat_id` courant, ordonnés chronologiquement et limités à `max_session_messages` (15 par défaut). Ces messages proviennent de SQLite. Voir [Gestion de session](#gestion-de-session) pour les règles d'expiration et d'archivage.

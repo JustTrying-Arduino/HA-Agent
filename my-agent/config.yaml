@@ -1,6 +1,6 @@
 name: "My Agent"
 description: "Minimalist AI agent with Telegram interface and tool execution"
-version: "0.3.18"
+version: "0.3.19"
 slug: "my-agent"
 url: "https://github.com/home-assistant/addons-example"
 

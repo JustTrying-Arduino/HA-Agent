@@ -27,7 +27,7 @@ Les fichiers présents dans `my-agent/workspace/` servent de templates initiaux 
 
 Le contenu du workspace est relu à chaque requête pour reconstruire le prompt système. Toute évolution d'un de ces fichiers a donc un impact direct et immédiat sur le comportement de l'agent, sans rebuild de l'add-on.
 
-`AGENT.md`, `USER.md`, `MEMORY.md`, `Prompt_Reminder.md` et éventuellement `chats/<chat_id>.md` peuvent être injectés directement selon le type de run. Les skills, elles, ne sont pas injectées en entier: le prompt embarque seulement un index compact construit depuis leurs `SKILL.md`, puis l'agent lit le fichier complet à la demande via `read_file` si une skill semble pertinente.
+`AGENT.md`, `USER.md`, `MEMORY.md`, `Prompt_Reminder.md` et éventuellement `chats/<chat_id>.md` peuvent être injectés directement selon le type de run. Dans le prompt final, les blocs issus de `AGENT.md`, `USER.md`, `MEMORY.md` et `Prompt_Reminder.md` sont intitulés avec leur nom de fichier. Le contexte spécifique au chat courant est présenté sous l'intitulé `Current Chat Specific Context` plutôt que par son chemin de fichier. Les skills, elles, ne sont pas injectées en entier: le prompt embarque seulement un index compact construit depuis leurs `SKILL.md`, puis l'agent lit le fichier complet à la demande via `read_file` si une skill semble pertinente.
 
 ## Relation avec la memoire recente
 

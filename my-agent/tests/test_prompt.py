@@ -122,7 +122,7 @@ class PromptTests(unittest.TestCase):
                 cfg.workspace_path = old_workspace_path
                 cfg.include_recent_tool_calls = old_include_recent_tool_calls
 
-        self.assertIn("## Chat Context", prompt)
+        self.assertIn("## Current Chat Specific Context", prompt)
         self.assertIn("- Current chat ID: 123", prompt)
         self.assertIn("Shared context for chat 123.", prompt)
 
@@ -142,7 +142,7 @@ class PromptTests(unittest.TestCase):
                 cfg.workspace_path = old_workspace_path
                 cfg.include_recent_tool_calls = old_include_recent_tool_calls
 
-        self.assertNotIn("## Chat Context", prompt)
+        self.assertNotIn("## Current Chat Specific Context", prompt)
         self.assertNotIn("Shared context for chat 123.", prompt)
 
     def test_build_system_prompt_skips_chat_context_when_chat_id_missing(self):
@@ -161,7 +161,7 @@ class PromptTests(unittest.TestCase):
                 cfg.workspace_path = old_workspace_path
                 cfg.include_recent_tool_calls = old_include_recent_tool_calls
 
-        self.assertNotIn("## Chat Context", prompt)
+        self.assertNotIn("## Current Chat Specific Context", prompt)
 
     def test_build_system_prompt_skips_empty_chat_context(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -200,5 +200,5 @@ class PromptTests(unittest.TestCase):
                 cfg.workspace_path = old_workspace_path
                 cfg.include_recent_tool_calls = old_include_recent_tool_calls
 
-        self.assertLess(prompt.index("## User Profile"), prompt.index("## Chat Context"))
-        self.assertLess(prompt.index("## Chat Context"), prompt.index("## Skills Index"))
+        self.assertLess(prompt.index("## USER.md"), prompt.index("## Current Chat Specific Context"))
+        self.assertLess(prompt.index("## Current Chat Specific Context"), prompt.index("## Skills Index"))
