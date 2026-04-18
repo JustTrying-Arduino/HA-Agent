@@ -11,7 +11,7 @@ Le tool `market_watch` porte l'integration produit:
 - il lit une watchlist structuree depuis `workspace/skills/market-watch/watchlist.json`;
 - il rafraichit les donnees EOD via Marketstack si necessaire;
 - il stocke l'historique localement dans SQLite;
-- il renvoie un resume directement exploitable par l'agent: top hausses, top baisses, candidats rebond, falling knives et rappel de quota.
+- il renvoie un resume directement exploitable par l'agent: top hausses, top baisses, candidats rebond, falling knives, rappel de quota et incidents de refresh eventuels.
 
 Le tool reste volontairement compact: il ne fait pas lui-meme la recherche du "why". Cette etape est deleguee au tandem `web_search` + `web_fetch` pour ne cibler que les quelques dossiers vraiment interessants.
 
@@ -27,6 +27,7 @@ Le comportement recherche est:
 - ne pas rappeler Marketstack si un symbole a deja ete rafraichi dans la journee et que le cache local est suffisant;
 - faire un backfill historique seulement si l'historique local est trop court ou si un refresh force est demande;
 - separer les appels par exchange afin de desambiguizer les symboles courts du marche francais (`AI`, `OR`, etc.);
+- si un appel batch Marketstack echoue sur une erreur cliente, retenter symbole par symbole pour isoler un ticker invalide sans bloquer tout le groupe;
 - garder un groupe quotidien restreint car le plan gratuit n'est pas adapte a un full scan quotidien type CAC40 + US.
 
 Hypothese produit retenue: la doc Marketstack indique que chaque symbole dans `symbols=` consomme une requete. L'audit interne suit donc ce modele de quota. C'est une inference de produit a revalider en integration reelle si Marketstack facture differemment sur certains endpoints.
@@ -72,5 +73,6 @@ Cette separation est importante: un candidat "rebond" technique peut etre invali
 ## Points d'attention
 
 - Si la watchlist contient des titres US, un run apres la cloture parisienne mais avant la cloture US produira naturellement des dates de reference heterogenes.
+- Les erreurs HTTP Marketstack doivent remonter avec leur detail API (`code`, `message`, `context`) pour rendre un echec actionnable sans relire les logs bruts.
 - Toute evolution de `market_watch` doit aussi mettre a jour `tools.md`.
 - Toute evolution de structure de `watchlist.json` doit aussi mettre a jour `workspace-et-memoire.md`.

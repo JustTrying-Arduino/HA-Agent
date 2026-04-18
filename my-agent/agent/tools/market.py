@@ -36,6 +36,12 @@ class WatchlistEntry:
     name: str
 
 
+class MarketstackRequestError(RuntimeError):
+    def __init__(self, message: str, *, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def _now_utc() -> datetime:
     return datetime.now(UTC)
 
@@ -188,40 +194,77 @@ def _fetch_symbol_status(entry: WatchlistEntry, history_days: int) -> dict:
     }
 
 
-def _fetch_marketstack_rows(
+def _format_marketstack_context(context: dict | None) -> str | None:
+    if not isinstance(context, dict):
+        return None
+
+    details: list[str] = []
+    for field, entries in context.items():
+        if isinstance(entries, list):
+            messages = []
+            for item in entries:
+                if isinstance(item, dict):
+                    message = item.get("message") or item.get("key")
+                    if message:
+                        messages.append(str(message))
+                elif item:
+                    messages.append(str(item))
+            if messages:
+                details.append(f"{field}: {'; '.join(messages)}")
+        elif entries:
+            details.append(f"{field}: {entries}")
+
+    return " | ".join(details) if details else None
+
+
+def _format_marketstack_error(response: requests.Response) -> str:
+    status_code = getattr(response, "status_code", None)
+    prefix = f"HTTP {status_code}" if status_code is not None else "HTTP error"
+    try:
+        payload = response.json()
+    except ValueError:
+        text = (getattr(response, "text", "") or "").strip()
+        return f"{prefix}: {text[:240] or 'empty response body'}"
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return f"{prefix}: unexpected error response"
+
+    parts = [prefix]
+    if error.get("code"):
+        parts.append(str(error["code"]))
+    if error.get("message"):
+        parts.append(str(error["message"]))
+    message = " | ".join(parts)
+    context = _format_marketstack_context(error.get("context"))
+    if context:
+        message = f"{message} | {context}"
+    return message
+
+
+def _request_marketstack_rows(
     *,
+    endpoint: str,
+    params: dict,
     exchange: str,
     symbols: list[str],
-    history_days: int,
     request_kind: str,
 ) -> list[dict]:
-    if not cfg.marketstack_api_key:
-        raise RuntimeError("MARKETSTACK_API_KEY is missing")
-
-    params = {
-        "access_key": cfg.marketstack_api_key,
-        "symbols": ",".join(symbols),
-        "exchange": exchange,
-        "limit": 1000,
-        "offset": 0,
-        "sort": "ASC",
-    }
-    endpoint = "/eod/latest"
-    if request_kind == "history":
-        endpoint = "/eod"
-        params["date_from"] = (_today_utc() - timedelta(days=max(history_days * 2, 120))).isoformat()
-        params["date_to"] = _today_utc().isoformat()
-
     rows: list[dict] = []
+    request_params = dict(params)
     try:
         while True:
             response = requests.get(
                 f"{MARKETSTACK_BASE_URL}{endpoint}",
-                params=params,
+                params=request_params,
                 timeout=20,
                 headers={"User-Agent": "MyAgent/1.0"},
             )
-            response.raise_for_status()
+            if response.status_code >= 400:
+                raise MarketstackRequestError(
+                    _format_marketstack_error(response),
+                    status_code=response.status_code,
+                )
             payload = response.json()
             batch = payload.get("data", [])
             rows.extend(batch)
@@ -232,7 +275,7 @@ def _fetch_marketstack_rows(
             total = int(pagination.get("total", len(batch) or 0))
             if not batch or offset + count >= total:
                 break
-            params["offset"] = offset + count
+            request_params["offset"] = offset + count
 
         _log_api_usage(
             endpoint=endpoint,
@@ -253,6 +296,82 @@ def _fetch_marketstack_rows(
             row_count=0,
             note=str(exc),
         )
+        raise
+
+
+def _fetch_marketstack_rows(
+    *,
+    exchange: str,
+    symbols: list[str],
+    history_days: int,
+    request_kind: str,
+) -> tuple[list[dict], list[str]]:
+    if not cfg.marketstack_api_key:
+        raise RuntimeError("MARKETSTACK_API_KEY is missing")
+
+    params = {
+        "access_key": cfg.marketstack_api_key,
+        "symbols": ",".join(symbols),
+        "exchange": exchange,
+        "limit": 1000,
+        "offset": 0,
+        "sort": "ASC",
+    }
+    endpoint = "/eod/latest"
+    if request_kind == "history":
+        endpoint = "/eod"
+        params["date_from"] = (_today_utc() - timedelta(days=max(history_days * 2, 120))).isoformat()
+        params["date_to"] = _today_utc().isoformat()
+
+    try:
+        rows = _request_marketstack_rows(
+            endpoint=endpoint,
+            params=params,
+            exchange=exchange,
+            symbols=symbols,
+            request_kind=request_kind,
+        )
+        return rows, []
+    except MarketstackRequestError as exc:
+        should_retry_per_symbol = (
+            len(symbols) > 1 and exc.status_code is not None and 400 <= exc.status_code < 500 and exc.status_code not in {401, 403, 429}
+        )
+        if not should_retry_per_symbol:
+            raise
+
+        recovered_rows: list[dict] = []
+        failed_symbols: list[str] = []
+        for symbol in symbols:
+            single_params = dict(params)
+            single_params["symbols"] = symbol
+            single_params["offset"] = 0
+            try:
+                recovered_rows.extend(
+                    _request_marketstack_rows(
+                        endpoint=endpoint,
+                        params=single_params,
+                        exchange=exchange,
+                        symbols=[symbol],
+                        request_kind=request_kind,
+                    )
+                )
+            except MarketstackRequestError as single_exc:
+                failed_symbols.append(f"{symbol}:{exchange} ({single_exc})")
+
+        if recovered_rows:
+            if failed_symbols:
+                logger.warning(
+                    "Marketstack partial refresh for %s %s: %s",
+                    exchange,
+                    request_kind,
+                    "; ".join(failed_symbols),
+                )
+            return recovered_rows, failed_symbols
+
+        if failed_symbols:
+            raise RuntimeError(
+                f"{exc}. Per-symbol retry failures: {'; '.join(failed_symbols)}"
+            ) from exc
         raise
 
 
@@ -312,6 +431,7 @@ def _refresh_market_data(entries: list[WatchlistEntry], history_days: int, force
     summary = {
         "refreshed_symbols": [],
         "cache_only_symbols": [],
+        "failed_symbols": [],
     }
 
     for exchange, exchange_entries in by_exchange.items():
@@ -335,7 +455,7 @@ def _refresh_market_data(entries: list[WatchlistEntry], history_days: int, force
                 cache_only.append(entry)
 
         if needs_history:
-            history_rows = _fetch_marketstack_rows(
+            history_rows, history_failures = _fetch_marketstack_rows(
                 exchange=exchange,
                 symbols=[entry.symbol for entry in needs_history],
                 history_days=history_days,
@@ -343,9 +463,10 @@ def _refresh_market_data(entries: list[WatchlistEntry], history_days: int, force
             )
             _upsert_market_rows(history_rows)
             summary["refreshed_symbols"].extend(f"{entry.symbol}:{exchange}" for entry in needs_history)
+            summary["failed_symbols"].extend(history_failures)
 
         if needs_latest:
-            latest_rows = _fetch_marketstack_rows(
+            latest_rows, latest_failures = _fetch_marketstack_rows(
                 exchange=exchange,
                 symbols=[entry.symbol for entry in needs_latest],
                 history_days=history_days,
@@ -353,6 +474,7 @@ def _refresh_market_data(entries: list[WatchlistEntry], history_days: int, force
             )
             _upsert_market_rows(latest_rows)
             summary["refreshed_symbols"].extend(f"{entry.symbol}:{exchange}" for entry in needs_latest)
+            summary["failed_symbols"].extend(latest_failures)
 
         summary["cache_only_symbols"].extend(f"{entry.symbol}:{exchange}" for entry in cache_only)
 
@@ -514,6 +636,7 @@ def _build_summary(
 ) -> str:
     monthly_budget = int(config.get("monthly_symbol_budget", DEFAULT_MONTHLY_BUDGET))
     month_usage = _symbol_month_usage()
+    failed_symbols = refresh_summary.get("failed_symbols", [])
     latest_dates = sorted({item["date"] for item in analyses})
     movers_down = sorted(
         [item for item in analyses if item["change_1d"] is not None],
@@ -563,6 +686,13 @@ def _build_summary(
         "",
         "Top drops:",
     ]
+    if failed_symbols:
+        failures = failed_symbols[:3]
+        extra = len(failed_symbols) - len(failures)
+        failure_line = "; ".join(failures)
+        if extra > 0:
+            failure_line += f"; +{extra} more"
+        lines.insert(-2, f"- Refresh issues: {failure_line}")
     if movers_down:
         lines.extend(_render_line(item) for item in movers_down)
     else:

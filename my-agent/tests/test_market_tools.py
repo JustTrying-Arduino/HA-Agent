@@ -17,8 +17,10 @@ sys.modules.setdefault("requests", types.SimpleNamespace(get=None))
 
 
 class _FakeResponse:
-    def __init__(self, payload: dict):
+    def __init__(self, payload: dict, *, status_code: int = 200, text: str | None = None):
         self._payload = payload
+        self.status_code = status_code
+        self.text = text if text is not None else json.dumps(payload)
 
     def raise_for_status(self):
         return None
@@ -221,6 +223,77 @@ class MarketWatchTests(unittest.TestCase):
         cfg.marketstack_api_key = ""
         result = self.market_tools.market_watch(group="test_group", refresh=True)
         self.assertIn("MARKETSTACK_API_KEY is not configured", result)
+
+    def test_market_watch_falls_back_to_single_symbol_refresh_after_batch_error(self):
+        error_payload = {
+            "error": {
+                "code": "validation_error",
+                "message": "Request failed with validation error",
+                "context": {
+                    "symbols": [
+                        {
+                            "key": "invalid_symbol",
+                            "message": "BBB is not supported on XPAR",
+                        }
+                    ]
+                },
+            }
+        }
+
+        def fake_get(_url, params=None, **_kwargs):
+            symbols = params["symbols"]
+            if symbols == "AAA,BBB,CCC":
+                return _FakeResponse(error_payload, status_code=406)
+            if symbols == "BBB":
+                return _FakeResponse(error_payload, status_code=406)
+
+            payload = {
+                "pagination": {"limit": 1000, "offset": 0, "count": 2, "total": 2},
+                "data": [
+                    {
+                        "symbol": symbols,
+                        "exchange": "XPAR",
+                        "date": "2026-04-17T00:00:00+0000",
+                        "name": symbols,
+                        "price_currency": "eur",
+                        "open": 100.0,
+                        "high": 101.0,
+                        "low": 95.0,
+                        "close": 96.0,
+                        "volume": 2000.0,
+                    },
+                    {
+                        "symbol": symbols,
+                        "exchange": "XPAR",
+                        "date": "2026-04-18T00:00:00+0000",
+                        "name": symbols,
+                        "price_currency": "eur",
+                        "open": 96.0,
+                        "high": 98.0,
+                        "low": 90.0,
+                        "close": 92.0,
+                        "volume": 2600.0,
+                    },
+                ],
+            }
+            return _FakeResponse(payload)
+
+        with patch.object(self.market_tools, "_today_utc", return_value=date(2026, 4, 18)), patch.object(
+            self.market_tools.requests, "get", side_effect=fake_get
+        ) as get_mock:
+            result = self.market_tools.market_watch(
+                group="test_group",
+                refresh=True,
+                force_refresh=True,
+                history_days=30,
+            )
+
+        self.assertIn("Refresh issues: BBB:XPAR", result)
+        self.assertIn("HTTP 406 | validation_error", result)
+        self.assertIn("Missing cache rows:\n- BBB:XPAR", result)
+        self.assertEqual(get_mock.call_count, 4)
+        rows = db.fetchall("SELECT symbol, exchange, date FROM market_eod_prices ORDER BY symbol, date")
+        self.assertEqual([(row["symbol"], row["date"]) for row in rows], [("AAA", "2026-04-17"), ("AAA", "2026-04-18"), ("CCC", "2026-04-17"), ("CCC", "2026-04-18")])
 
 
 if __name__ == "__main__":

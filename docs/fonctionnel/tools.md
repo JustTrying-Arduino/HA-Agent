@@ -36,7 +36,7 @@ Règles à préserver:
 ## Exposition conditionnelle
 
 - `web_search` n'est exposé que si `cfg.brave_api_key` est configurée.
-- `market_watch` dépend d'une clé `cfg.marketstack_api_key` côté exécution pour pouvoir rafraîchir les données EOD.
+- `market_watch` dépend d'une clé `cfg.marketstack_api_key` côté exécution pour pouvoir rafraîchir les données EOD; ses erreurs Marketstack doivent rester lisibles et inclure le détail de validation renvoyé par l'API quand il existe.
 - les tools Home Assistant ne sont exposés que si `cfg.supervisor_token` est configuré.
 - les tools Home Assistant limitent l'accès aux entités portant le label `cfg.ha_expose_label`.
 - `escalate_model` n'est exposé que tant que le run est encore sur le modèle léger.
@@ -48,6 +48,7 @@ Règles à préserver:
 - récupération web tronquée à 20 000 caractères.
 - cache de résolution du label Home Assistant: 60 secondes.
 - veille boursière bornée à des heuristiques EOD simples et à une watchlist workspace explicitement configurée.
+- en veille boursière, un échec batch Marketstack côté client peut être redescendu en retries symbole par symbole pour éviter qu'un ticker invalide bloque tout le groupe.
 
 Le projet ne sandboxe pas les tools à l'intérieur du conteneur. Cette liberté est intentionnelle et fait partie du contrat d'usage du projet.
 
