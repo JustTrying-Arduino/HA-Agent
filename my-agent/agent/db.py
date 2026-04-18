@@ -79,6 +79,40 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_reminders_chat_status
             ON reminders(chat_id, status);
+
+        CREATE TABLE IF NOT EXISTS market_eod_prices (
+            symbol TEXT NOT NULL,
+            exchange TEXT NOT NULL,
+            date TEXT NOT NULL,
+            name TEXT,
+            currency TEXT,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume REAL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY(symbol, exchange, date)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_market_eod_symbol_exchange_date
+            ON market_eod_prices(symbol, exchange, date DESC);
+
+        CREATE TABLE IF NOT EXISTS market_api_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            endpoint TEXT NOT NULL,
+            request_kind TEXT NOT NULL,
+            exchange TEXT,
+            symbols TEXT NOT NULL,
+            symbols_count INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            row_count INTEGER NOT NULL DEFAULT 0,
+            note TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_market_api_usage_timestamp
+            ON market_api_usage(timestamp);
     """)
     db.commit()
 

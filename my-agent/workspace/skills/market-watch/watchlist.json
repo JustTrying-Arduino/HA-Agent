@@ -1,0 +1,58 @@
+{
+  "default_group": "core_daily",
+  "monthly_symbol_budget": 80,
+  "groups": {
+    "core_daily": [
+      {"symbol": "MC", "exchange": "XPAR", "name": "LVMH"},
+      {"symbol": "OR", "exchange": "XPAR", "name": "L'Oreal"},
+      {"symbol": "SAN", "exchange": "XPAR", "name": "Sanofi"},
+      {"symbol": "SU", "exchange": "XPAR", "name": "Schneider Electric"},
+      {"symbol": "DG", "exchange": "XPAR", "name": "Vinci"},
+      {"symbol": "AIR", "exchange": "XPAR", "name": "Airbus"},
+      {"symbol": "BNP", "exchange": "XPAR", "name": "BNP Paribas"},
+      {"symbol": "CS", "exchange": "XPAR", "name": "AXA"},
+      {"symbol": "CAP", "exchange": "XPAR", "name": "Capgemini"},
+      {"symbol": "TTE", "exchange": "XPAR", "name": "TotalEnergies"},
+      {"symbol": "AAPL", "exchange": "XNAS", "name": "Apple"},
+      {"symbol": "TSLA", "exchange": "XNAS", "name": "Tesla"}
+    ],
+    "cac_seed": [
+      {"symbol": "MC", "exchange": "XPAR", "name": "LVMH"},
+      {"symbol": "OR", "exchange": "XPAR", "name": "L'Oreal"},
+      {"symbol": "SAN", "exchange": "XPAR", "name": "Sanofi"},
+      {"symbol": "SU", "exchange": "XPAR", "name": "Schneider Electric"},
+      {"symbol": "DG", "exchange": "XPAR", "name": "Vinci"},
+      {"symbol": "AIR", "exchange": "XPAR", "name": "Airbus"},
+      {"symbol": "BNP", "exchange": "XPAR", "name": "BNP Paribas"},
+      {"symbol": "CS", "exchange": "XPAR", "name": "AXA"},
+      {"symbol": "CAP", "exchange": "XPAR", "name": "Capgemini"},
+      {"symbol": "TTE", "exchange": "XPAR", "name": "TotalEnergies"},
+      {"symbol": "AI", "exchange": "XPAR", "name": "Air Liquide"},
+      {"symbol": "ACA", "exchange": "XPAR", "name": "Credit Agricole"},
+      {"symbol": "BN", "exchange": "XPAR", "name": "Danone"},
+      {"symbol": "DSY", "exchange": "XPAR", "name": "Dassault Systemes"},
+      {"symbol": "EL", "exchange": "XPAR", "name": "EssilorLuxottica"},
+      {"symbol": "ENGI", "exchange": "XPAR", "name": "Engie"},
+      {"symbol": "GLE", "exchange": "XPAR", "name": "Societe Generale"},
+      {"symbol": "HO", "exchange": "XPAR", "name": "Thales"},
+      {"symbol": "KER", "exchange": "XPAR", "name": "Kering"},
+      {"symbol": "LR", "exchange": "XPAR", "name": "Legrand"},
+      {"symbol": "ML", "exchange": "XPAR", "name": "Michelin"},
+      {"symbol": "ORA", "exchange": "XPAR", "name": "Orange"},
+      {"symbol": "PUB", "exchange": "XPAR", "name": "Publicis"},
+      {"symbol": "RI", "exchange": "XPAR", "name": "Pernod Ricard"},
+      {"symbol": "RMS", "exchange": "XPAR", "name": "Hermes"},
+      {"symbol": "RNO", "exchange": "XPAR", "name": "Renault"},
+      {"symbol": "SAF", "exchange": "XPAR", "name": "Safran"},
+      {"symbol": "SGO", "exchange": "XPAR", "name": "Saint-Gobain"},
+      {"symbol": "URW", "exchange": "XPAR", "name": "Unibail-Rodamco-Westfield"},
+      {"symbol": "VIE", "exchange": "XPAR", "name": "Veolia"}
+    ],
+    "us_key": [
+      {"symbol": "AAPL", "exchange": "XNAS", "name": "Apple"},
+      {"symbol": "TSLA", "exchange": "XNAS", "name": "Tesla"},
+      {"symbol": "MSFT", "exchange": "XNAS", "name": "Microsoft"},
+      {"symbol": "NVDA", "exchange": "XNAS", "name": "NVIDIA"}
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 name: "My Agent"
 description: "Minimalist AI agent with Telegram interface and tool execution"
-version: "0.3.19"
+version: "0.3.20"
 slug: "my-agent"
 url: "https://github.com/home-assistant/addons-example"
 
@@ -28,6 +28,7 @@ options:
   openai_model_light: "gpt-4.1-mini"
   groq_api_key: ""
   brave_api_key: ""
+  marketstack_api_key: ""
   telegram_bot_token: ""
   telegram_allowed_chat_ids: ""
   session_timeout_hours: 48
@@ -43,6 +44,7 @@ schema:
   openai_model_light: str
   groq_api_key: str?
   brave_api_key: str?
+  marketstack_api_key: str?
   telegram_bot_token: str
   telegram_allowed_chat_ids: str
   session_timeout_hours: int

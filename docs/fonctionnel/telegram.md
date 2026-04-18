@@ -22,6 +22,7 @@ Le bot envoie immédiatement un court message de type `En reflexion...` pour sig
 
 - recherche web;
 - récupération de page web;
+- analyse boursiere EOD;
 - exécution shell.
 - lecture ou commande Home Assistant.
 

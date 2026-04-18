@@ -14,6 +14,7 @@ Les fichiers présents dans `my-agent/workspace/` servent de templates initiaux 
 - `Prompt_Reminder.md`: consignes spécifiques aux runs déclenchés par rappel.
 - `chats/<chat_id>.md`: contexte durable spécifique à une conversation Telegram précise.
 - `skills/<name>/SKILL.md`: compétences étroites, actionnables, spécialisées.
+- `skills/<name>/...`: une skill peut aussi embarquer des fichiers auxiliaires lisibles par l'agent ou par des tools, par exemple une watchlist JSON.
 
 ## Règles d'usage
 
@@ -22,12 +23,13 @@ Les fichiers présents dans `my-agent/workspace/` servent de templates initiaux 
 - `MEMORY.md` ne remplace pas l'historique de session: il sert au long terme.
 - `chats/<chat_id>.md` ne doit contenir que des consignes stables ou récurrentes propres à ce chat.
 - Une skill doit être ciblée, autonome, et éviter de devenir un journal ou une mémoire fourre-tout.
+- Les fichiers auxiliaires d'une skill doivent rester localisés dans son dossier et documentés si leur format devient un contrat de produit.
 
 ## Relation avec le prompt
 
 Le contenu du workspace est relu à chaque requête pour reconstruire le prompt système. Toute évolution d'un de ces fichiers a donc un impact direct et immédiat sur le comportement de l'agent, sans rebuild de l'add-on.
 
-`AGENT.md`, `USER.md`, `MEMORY.md`, `Prompt_Reminder.md` et éventuellement `chats/<chat_id>.md` peuvent être injectés directement selon le type de run. Dans le prompt final, les blocs issus de `AGENT.md`, `USER.md`, `MEMORY.md` et `Prompt_Reminder.md` sont intitulés avec leur nom de fichier. Le contexte spécifique au chat courant est présenté sous l'intitulé `Current Chat Specific Context` plutôt que par son chemin de fichier. Les skills, elles, ne sont pas injectées en entier: le prompt embarque seulement un index compact construit depuis leurs `SKILL.md`, puis l'agent lit le fichier complet à la demande via `read_file` si une skill semble pertinente.
+`AGENT.md`, `USER.md`, `MEMORY.md`, `Prompt_Reminder.md` et éventuellement `chats/<chat_id>.md` peuvent être injectés directement selon le type de run. Dans le prompt final, les blocs issus de `AGENT.md`, `USER.md`, `MEMORY.md` et `Prompt_Reminder.md` sont intitulés avec leur nom de fichier. Le contexte spécifique au chat courant est présenté sous l'intitulé `Current Chat Specific Context` plutôt que par son chemin de fichier. Les skills, elles, ne sont pas injectées en entier: le prompt embarque seulement un index compact construit depuis leurs `SKILL.md`, puis l'agent lit le fichier complet à la demande via `read_file` si une skill semble pertinente. Les fichiers auxiliaires d'une skill ne sont pas injectés automatiquement; ils restent disponibles sur disque pour lecture explicite ou consommation directe par un tool natif.
 
 ## Relation avec la memoire recente
 
