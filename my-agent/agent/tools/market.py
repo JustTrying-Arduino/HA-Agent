@@ -1,842 +1,226 @@
-"""Tool: end-of-day market watch with Marketstack-backed caching."""
+"""Tool: market_watch — screen a watchlist by strategy (rebound / swing).
+
+Runs entirely on Degiro data via the provider in `agent.degiro`. Strategies
+are evaluated close-only (Degiro does not expose OHLV).
+"""
 
 from __future__ import annotations
 
 import json
 import logging
-from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-import requests
-
+from agent import degiro, indicators
 from agent.config import cfg
-from agent.db import commit, fetchall, fetchone, get_db
 from agent.tools import register
 
 logger = logging.getLogger(__name__)
 
-MARKETSTACK_BASE_URL = "https://api.marketstack.com/v2"
 WATCHLIST_PATH = Path("skills") / "market-watch" / "watchlist.json"
 DEFAULT_GROUP = "core_daily"
-DEFAULT_HISTORY_DAYS = 120
-MIN_BARS_FOR_ANALYSIS = 25
-DEFAULT_MAX_MOVERS = 6
-DEFAULT_MAX_CANDIDATES = 5
-DEFAULT_MIN_DROP_PCT = 4.0
-DEFAULT_MIN_DRAWNDOWN_PCT = 10.0
-DEFAULT_MONTHLY_BUDGET = 80
+DEFAULT_MAX_CANDIDATES = 8
 
 
 @dataclass(frozen=True)
 class WatchlistEntry:
-    symbol: str
-    exchange: str
-    name: str
-
-
-class MarketstackRequestError(RuntimeError):
-    def __init__(self, message: str, *, status_code: int | None = None):
-        super().__init__(message)
-        self.status_code = status_code
-
-
-def _now_utc() -> datetime:
-    return datetime.now(UTC)
-
-
-def _today_utc() -> date:
-    return _now_utc().date()
-
-
-def _recent_trading_day(ref: date | None = None) -> date:
-    current = ref or _today_utc()
-    while current.weekday() >= 5:
-        current -= timedelta(days=1)
-    return current
-
-
-def _pct_change(current: float | None, base: float | None) -> float | None:
-    if current is None or base in (None, 0):
-        return None
-    return ((current / base) - 1.0) * 100.0
-
-
-def _avg(values: list[float]) -> float | None:
-    if not values:
-        return None
-    return sum(values) / len(values)
-
-
-def _fmt_pct(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:+.1f}%"
-
-
-def _fmt_price(value: float | None) -> str:
-    if value is None:
-        return "n/a"
-    return f"{value:.2f}"
+    query: str
+    label: str
+    exchange_id: str | None
+    currency: str | None
 
 
 def _watchlist_abspath() -> Path:
     return Path(cfg.workspace_path) / WATCHLIST_PATH
 
 
-def _load_watchlist_config() -> dict:
+def _load_watchlist() -> dict:
     path = _watchlist_abspath()
     if not path.exists():
         raise FileNotFoundError(
-            f"Watchlist file not found: {path}. Create it from the workspace skill template."
+            f"Watchlist file not found: {path}. Populate it from the workspace template."
         )
     return json.loads(path.read_text())
 
 
-def _available_groups(config: dict) -> list[str]:
+def _resolve_group(group: str | None) -> tuple[str, list[WatchlistEntry]]:
+    config = _load_watchlist()
     groups = config.get("groups", {})
-    return sorted(groups.keys())
-
-
-def _resolve_watchlist(group: str | None) -> tuple[str, list[WatchlistEntry], dict]:
-    config = _load_watchlist_config()
-    groups = config.get("groups", {})
-    target_group = group or config.get("default_group") or DEFAULT_GROUP
-    if target_group == "all":
-        names = list(groups.keys())
-        raw_entries: list[dict] = []
-        seen: set[tuple[str, str]] = set()
-        for name in names:
-            for item in groups.get(name, []):
-                key = (item["symbol"], item["exchange"])
+    target = group or config.get("default_group") or DEFAULT_GROUP
+    if target == "all":
+        raw: list[dict] = []
+        seen: set[str] = set()
+        for name in groups:
+            for item in groups[name]:
+                key = (item.get("isin") or item.get("query") or "").upper()
                 if key in seen:
                     continue
                 seen.add(key)
-                raw_entries.append(item)
+                raw.append(item)
     else:
-        raw_entries = groups.get(target_group, [])
-        if not raw_entries:
-            available = ", ".join(_available_groups(config)) or "(none)"
+        raw = groups.get(target, [])
+        if not raw:
+            available = ", ".join(sorted(groups.keys())) or "(none)"
             raise ValueError(
-                f"Unknown or empty market watch group '{target_group}'. Available groups: {available}"
+                f"Unknown or empty watchlist group '{target}'. Available: {available}"
             )
 
-    entries = [
-        WatchlistEntry(
-            symbol=item["symbol"].upper().strip(),
-            exchange=item["exchange"].upper().strip(),
-            name=item.get("name", item["symbol"]).strip(),
-        )
-        for item in raw_entries
-    ]
-    return target_group, entries, config
-
-
-def _symbol_month_usage() -> int:
-    month_prefix = _now_utc().strftime("%Y-%m")
-    row = fetchone(
-        "SELECT COALESCE(SUM(symbols_count), 0) AS total FROM market_api_usage WHERE substr(timestamp, 1, 7) = ?",
-        (month_prefix,),
-    )
-    return int(row["total"]) if row else 0
-
-
-def _log_api_usage(
-    *,
-    endpoint: str,
-    request_kind: str,
-    exchange: str,
-    symbols: list[str],
-    status: str,
-    row_count: int,
-    note: str | None = None,
-) -> None:
-    db = get_db()
-    db.execute(
-        """
-        INSERT INTO market_api_usage(
-            timestamp, endpoint, request_kind, exchange, symbols, symbols_count, status, row_count, note
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            _now_utc().isoformat().replace("+00:00", "Z"),
-            endpoint,
-            request_kind,
-            exchange,
-            ",".join(symbols),
-            len(symbols),
-            status,
-            row_count,
-            note,
-        ),
-    )
-    db.commit()
-
-
-def _fetch_symbol_status(entry: WatchlistEntry, history_days: int) -> dict:
-    history_from = (_today_utc() - timedelta(days=max(history_days * 2, 90))).isoformat()
-    row = fetchone(
-        """
-        SELECT
-            MAX(date) AS latest_date,
-            MAX(fetched_at) AS latest_fetch,
-            SUM(CASE WHEN date >= ? THEN 1 ELSE 0 END) AS recent_bars
-        FROM market_eod_prices
-        WHERE symbol = ? AND exchange = ?
-        """,
-        (history_from, entry.symbol, entry.exchange),
-    )
-    return {
-        "latest_date": row["latest_date"] if row else None,
-        "latest_fetch": row["latest_fetch"] if row else None,
-        "recent_bars": int(row["recent_bars"] or 0) if row else 0,
-    }
-
-
-def _format_marketstack_context(context: dict | None) -> str | None:
-    if not isinstance(context, dict):
-        return None
-
-    details: list[str] = []
-    for field, entries in context.items():
-        if isinstance(entries, list):
-            messages = []
-            for item in entries:
-                if isinstance(item, dict):
-                    message = item.get("message") or item.get("key")
-                    if message:
-                        messages.append(str(message))
-                elif item:
-                    messages.append(str(item))
-            if messages:
-                details.append(f"{field}: {'; '.join(messages)}")
-        elif entries:
-            details.append(f"{field}: {entries}")
-
-    return " | ".join(details) if details else None
-
-
-def _format_marketstack_error(response: requests.Response) -> str:
-    status_code = getattr(response, "status_code", None)
-    prefix = f"HTTP {status_code}" if status_code is not None else "HTTP error"
-    try:
-        payload = response.json()
-    except ValueError:
-        text = (getattr(response, "text", "") or "").strip()
-        return f"{prefix}: {text[:240] or 'empty response body'}"
-
-    error = payload.get("error") if isinstance(payload, dict) else None
-    if not isinstance(error, dict):
-        return f"{prefix}: unexpected error response"
-
-    parts = [prefix]
-    if error.get("code"):
-        parts.append(str(error["code"]))
-    if error.get("message"):
-        parts.append(str(error["message"]))
-    message = " | ".join(parts)
-    context = _format_marketstack_context(error.get("context"))
-    if context:
-        message = f"{message} | {context}"
-    return message
-
-
-def _request_marketstack_rows(
-    *,
-    endpoint: str,
-    params: dict,
-    exchange: str,
-    symbols: list[str],
-    request_kind: str,
-) -> list[dict]:
-    rows: list[dict] = []
-    request_params = dict(params)
-    try:
-        while True:
-            response = requests.get(
-                f"{MARKETSTACK_BASE_URL}{endpoint}",
-                params=request_params,
-                timeout=20,
-                headers={"User-Agent": "MyAgent/1.0"},
-            )
-            if response.status_code >= 400:
-                raise MarketstackRequestError(
-                    _format_marketstack_error(response),
-                    status_code=response.status_code,
-                )
-            payload = response.json()
-            batch = payload.get("data", [])
-            rows.extend(batch)
-
-            pagination = payload.get("pagination", {})
-            count = int(pagination.get("count", len(batch) or 0))
-            offset = int(pagination.get("offset", 0))
-            total = int(pagination.get("total", len(batch) or 0))
-            if not batch or offset + count >= total:
-                break
-            request_params["offset"] = offset + count
-
-        _log_api_usage(
-            endpoint=endpoint,
-            request_kind=request_kind,
-            exchange=exchange,
-            symbols=symbols,
-            status="ok",
-            row_count=len(rows),
-        )
-        return rows
-    except Exception as exc:
-        _log_api_usage(
-            endpoint=endpoint,
-            request_kind=request_kind,
-            exchange=exchange,
-            symbols=symbols,
-            status="error",
-            row_count=0,
-            note=str(exc),
-        )
-        raise
-
-
-def _fetch_marketstack_rows(
-    *,
-    exchange: str,
-    symbols: list[str],
-    history_days: int,
-    request_kind: str,
-) -> tuple[list[dict], list[str]]:
-    if not cfg.marketstack_api_key:
-        raise RuntimeError("MARKETSTACK_API_KEY is missing")
-
-    params = {
-        "access_key": cfg.marketstack_api_key,
-        "symbols": ",".join(symbols),
-        "exchange": exchange,
-        "limit": 1000,
-        "offset": 0,
-        "sort": "ASC",
-    }
-    endpoint = "/eod/latest"
-    if request_kind == "history":
-        endpoint = "/eod"
-        params["date_from"] = (_today_utc() - timedelta(days=max(history_days * 2, 120))).isoformat()
-        params["date_to"] = _today_utc().isoformat()
-
-    try:
-        rows = _request_marketstack_rows(
-            endpoint=endpoint,
-            params=params,
-            exchange=exchange,
-            symbols=symbols,
-            request_kind=request_kind,
-        )
-        return rows, []
-    except MarketstackRequestError as exc:
-        should_retry_per_symbol = (
-            len(symbols) > 1 and exc.status_code is not None and 400 <= exc.status_code < 500 and exc.status_code not in {401, 403, 429}
-        )
-        if not should_retry_per_symbol:
-            raise
-
-        recovered_rows: list[dict] = []
-        failed_symbols: list[str] = []
-        for symbol in symbols:
-            single_params = dict(params)
-            single_params["symbols"] = symbol
-            single_params["offset"] = 0
-            try:
-                recovered_rows.extend(
-                    _request_marketstack_rows(
-                        endpoint=endpoint,
-                        params=single_params,
-                        exchange=exchange,
-                        symbols=[symbol],
-                        request_kind=request_kind,
-                    )
-                )
-            except MarketstackRequestError as single_exc:
-                failed_symbols.append(f"{symbol}:{exchange} ({single_exc})")
-
-        if recovered_rows:
-            if failed_symbols:
-                logger.warning(
-                    "Marketstack partial refresh for %s %s: %s",
-                    exchange,
-                    request_kind,
-                    "; ".join(failed_symbols),
-                )
-            return recovered_rows, failed_symbols
-
-        if failed_symbols:
-            raise RuntimeError(
-                f"{exc}. Per-symbol retry failures: {'; '.join(failed_symbols)}"
-            ) from exc
-        raise
-
-
-def _upsert_market_rows(rows: list[dict]) -> None:
-    if not rows:
-        return
-    db = get_db()
-    fetched_at = _now_utc().isoformat().replace("+00:00", "Z")
-    payload = []
-    for row in rows:
-        raw_date = (row.get("date") or "")[:10]
-        symbol = (row.get("symbol") or "").upper()
-        exchange = (row.get("exchange") or row.get("exchange_code") or "").upper()
-        if not raw_date or not symbol or not exchange:
+    entries = []
+    for item in raw:
+        query = item.get("isin") or item.get("query") or item.get("symbol")
+        if not query:
             continue
-        payload.append(
-            (
-                symbol,
-                exchange,
-                raw_date,
-                row.get("name"),
-                row.get("price_currency"),
-                row.get("open"),
-                row.get("high"),
-                row.get("low"),
-                row.get("close"),
-                row.get("volume"),
-                fetched_at,
+        entries.append(
+            WatchlistEntry(
+                query=str(query),
+                label=str(item.get("label") or item.get("name") or query),
+                exchange_id=item.get("exchange_id"),
+                currency=item.get("currency"),
             )
         )
-    db.executemany(
-        """
-        INSERT INTO market_eod_prices(
-            symbol, exchange, date, name, currency, open, high, low, close, volume, fetched_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(symbol, exchange, date) DO UPDATE SET
-            name = excluded.name,
-            currency = excluded.currency,
-            open = excluded.open,
-            high = excluded.high,
-            low = excluded.low,
-            close = excluded.close,
-            volume = excluded.volume,
-            fetched_at = excluded.fetched_at
-        """,
-        payload,
-    )
-    commit()
+    return target, entries
 
 
-def _refresh_market_data(entries: list[WatchlistEntry], history_days: int, force_refresh: bool) -> dict:
-    by_exchange: dict[str, list[WatchlistEntry]] = defaultdict(list)
-    for entry in entries:
-        by_exchange[entry.exchange].append(entry)
-
-    recent_day = _recent_trading_day()
-    summary = {
-        "refreshed_symbols": [],
-        "cache_only_symbols": [],
-        "failed_symbols": [],
-    }
-
-    for exchange, exchange_entries in by_exchange.items():
-        needs_history: list[WatchlistEntry] = []
-        needs_latest: list[WatchlistEntry] = []
-        cache_only: list[WatchlistEntry] = []
-
-        for entry in exchange_entries:
-            status = _fetch_symbol_status(entry, history_days)
-            latest_date = status["latest_date"]
-            latest_fetch = status["latest_fetch"]
-            fetched_today = bool(latest_fetch and latest_fetch[:10] == _today_utc().isoformat())
-            insufficient_history = status["recent_bars"] < MIN_BARS_FOR_ANALYSIS
-            stale_latest = not latest_date or latest_date < recent_day.isoformat()
-
-            if force_refresh or insufficient_history:
-                needs_history.append(entry)
-            elif stale_latest and not fetched_today:
-                needs_latest.append(entry)
-            else:
-                cache_only.append(entry)
-
-        if needs_history:
-            history_rows, history_failures = _fetch_marketstack_rows(
-                exchange=exchange,
-                symbols=[entry.symbol for entry in needs_history],
-                history_days=history_days,
-                request_kind="history",
-            )
-            _upsert_market_rows(history_rows)
-            summary["refreshed_symbols"].extend(f"{entry.symbol}:{exchange}" for entry in needs_history)
-            summary["failed_symbols"].extend(history_failures)
-
-        if needs_latest:
-            latest_rows, latest_failures = _fetch_marketstack_rows(
-                exchange=exchange,
-                symbols=[entry.symbol for entry in needs_latest],
-                history_days=history_days,
-                request_kind="latest",
-            )
-            _upsert_market_rows(latest_rows)
-            summary["refreshed_symbols"].extend(f"{entry.symbol}:{exchange}" for entry in needs_latest)
-            summary["failed_symbols"].extend(latest_failures)
-
-        summary["cache_only_symbols"].extend(f"{entry.symbol}:{exchange}" for entry in cache_only)
-
-    return summary
-
-
-def _load_series(entries: list[WatchlistEntry], history_days: int) -> dict[tuple[str, str], list[dict]]:
-    series: dict[tuple[str, str], list[dict]] = defaultdict(list)
-    date_from = (_today_utc() - timedelta(days=max(history_days * 2, 120))).isoformat()
-    for entry in entries:
-        rows = fetchall(
-            """
-            SELECT symbol, exchange, date, name, currency, open, high, low, close, volume
-            FROM market_eod_prices
-            WHERE symbol = ? AND exchange = ? AND date >= ?
-            ORDER BY date ASC
-            """,
-            (entry.symbol, entry.exchange, date_from),
+def _analyze_entry(entry: WatchlistEntry, strategy: str) -> dict:
+    try:
+        ref = degiro.resolve_product(
+            entry.query,
+            exchange_id=entry.exchange_id,
+            currency=entry.currency,
         )
-        series[(entry.symbol, entry.exchange)] = [dict(row) for row in rows]
-    return series
+    except Exception as exc:
+        return {"entry": entry, "error": f"resolve failed: {exc}"}
+
+    if not ref.vwd_id or not ref.history_ok:
+        return {"entry": entry, "ref": ref, "error": "no usable price history"}
+
+    try:
+        rows = degiro.load_candles(ref.vwd_id, "1y-1d")
+    except Exception as exc:
+        return {"entry": entry, "ref": ref, "error": f"candles fetch failed: {exc}"}
+
+    closes = [r.close for r in rows]
+
+    high_52w: float | None = None
+    if ref.metadata_ok:
+        try:
+            meta = degiro.get_client().price_metadata(ref.vwd_id)
+            high_52w = meta.get("highPriceP1Y")
+        except Exception as exc:
+            logger.debug("metadata fetch failed for %s: %s", ref.symbol, exc)
+
+    verdict = indicators.evaluate(strategy, closes, high_52w=high_52w)
+    return {"entry": entry, "ref": ref, "verdict": verdict}
 
 
-def _analyze_entry(entry: WatchlistEntry, bars: list[dict]) -> dict | None:
-    if len(bars) < 2:
-        return None
-
-    latest = bars[-1]
-    prev = bars[-2]
-    last_5 = bars[-6] if len(bars) >= 6 else None
-    last_20 = bars[-21] if len(bars) >= 21 else None
-    closes_20 = [bar["close"] for bar in bars[-20:] if bar["close"] is not None]
-    closes_60 = [bar["close"] for bar in bars[-60:] if bar["close"] is not None]
-    volumes_20 = [bar["volume"] for bar in bars[-20:] if bar["volume"] not in (None, 0)]
-
-    close = latest["close"]
-    low = latest["low"]
-    high = latest["high"]
-    volume = latest["volume"]
-    close_position = None
-    if low is not None and high not in (None, low):
-        close_position = (close - low) / (high - low)
-
-    avg_volume_20 = _avg(volumes_20[:-1] or volumes_20)
-    volume_ratio = (volume / avg_volume_20) if volume and avg_volume_20 not in (None, 0) else None
-    ma20 = _avg(closes_20)
-    drawdown_20 = _pct_change(close, max(closes_20) if closes_20 else None)
-    drawdown_60 = _pct_change(close, max(closes_60) if closes_60 else None)
-    distance_ma20 = _pct_change(close, ma20)
-    recovery_from_low = _pct_change(close, low)
-    change_1d = _pct_change(close, prev["close"])
-    change_5d = _pct_change(close, last_5["close"] if last_5 else None)
-    change_20d = _pct_change(close, last_20["close"] if last_20 else None)
-
-    rebound_score = 0
-    if change_1d is not None and change_1d <= -4:
-        rebound_score += 1
-    if change_5d is not None and change_5d <= -8:
-        rebound_score += 1
-    if drawdown_20 is not None and drawdown_20 <= -10:
-        rebound_score += 1
-    if recovery_from_low is not None and recovery_from_low >= 1:
-        rebound_score += 1
-    if volume_ratio is not None and volume_ratio >= 1.5:
-        rebound_score += 1
-
-    falling_knife_score = 0
-    if change_1d is not None and change_1d <= -5:
-        falling_knife_score += 1
-    if close_position is not None and close_position <= 0.2:
-        falling_knife_score += 1
-    if recovery_from_low is not None and recovery_from_low < 0.5:
-        falling_knife_score += 1
-    if drawdown_20 is not None and drawdown_20 <= -15:
-        falling_knife_score += 1
-
-    strategies: list[str] = []
-    if change_1d is not None and change_1d <= -4 and recovery_from_low is not None and recovery_from_low >= 1:
-        strategies.append("capitulation rebound")
-    if change_5d is not None and change_5d <= -8 and drawdown_20 is not None and drawdown_20 <= -10:
-        strategies.append("oversold mean reversion")
-    if distance_ma20 is not None and -6 <= distance_ma20 <= -2 and drawdown_60 is not None and drawdown_60 > -10:
-        strategies.append("trend pullback")
-    if change_1d is not None and change_1d >= 4 and close_position is not None and close_position >= 0.7:
-        strategies.append("relative strength breakout")
-
-    return {
-        "symbol": entry.symbol,
-        "exchange": entry.exchange,
-        "name": latest.get("name") or entry.name,
-        "currency": latest.get("currency"),
-        "date": latest["date"],
-        "close": close,
-        "change_1d": change_1d,
-        "change_5d": change_5d,
-        "change_20d": change_20d,
-        "drawdown_20": drawdown_20,
-        "drawdown_60": drawdown_60,
-        "distance_ma20": distance_ma20,
-        "recovery_from_low": recovery_from_low,
-        "close_position": close_position,
-        "volume_ratio": volume_ratio,
-        "rebound_score": rebound_score,
-        "falling_knife_score": falling_knife_score,
-        "strategies": strategies,
-        "bars": len(bars),
-    }
-
-
-def _render_line(item: dict) -> str:
-    extra = [
-        f"close {_fmt_price(item['close'])}",
-        f"1d {_fmt_pct(item['change_1d'])}",
-        f"5d {_fmt_pct(item['change_5d'])}",
-        f"dd20 {_fmt_pct(item['drawdown_20'])}",
-    ]
-    return f"- {item['symbol']} ({item['exchange']}) {item['name']} | " + ", ".join(extra)
-
-
-def _render_candidate(item: dict) -> str:
-    strategy_text = ", ".join(item["strategies"]) if item["strategies"] else "news-driven overreaction check"
-    facts = [
-        f"score {item['rebound_score']}",
-        f"1d {_fmt_pct(item['change_1d'])}",
-        f"dd20 {_fmt_pct(item['drawdown_20'])}",
-    ]
-    if item["recovery_from_low"] is not None:
-        facts.append(f"rebound intraday {_fmt_pct(item['recovery_from_low'])}")
-    if item["volume_ratio"] is not None:
-        facts.append(f"vol x{item['volume_ratio']:.1f}")
+def _render_verdict(item: dict) -> str:
+    entry: WatchlistEntry = item["entry"]
+    ref = item.get("ref")
+    label = entry.label
+    if ref and ref.symbol:
+        label = f"{ref.symbol} ({entry.label})"
+    if "error" in item:
+        return f"- {label}: skipped — {item['error']}"
+    verdict = item["verdict"]
+    reasons = "; ".join(verdict.reasons) if verdict.reasons else "no signal"
     return (
-        f"- {item['symbol']} ({item['exchange']}) {item['name']} | "
-        f"{strategy_text} | " + ", ".join(facts)
+        f"- {label} | {verdict.signal} (score {verdict.score}) | {reasons}"
     )
-
-
-def _render_risk(item: dict) -> str:
-    facts = [
-        f"1d {_fmt_pct(item['change_1d'])}",
-        f"close near low {item['close_position']:.0%}" if item["close_position"] is not None else None,
-        f"dd20 {_fmt_pct(item['drawdown_20'])}",
-    ]
-    cleaned = [fact for fact in facts if fact]
-    return f"- {item['symbol']} ({item['exchange']}) {item['name']} | falling knife risk | " + ", ".join(cleaned)
-
-
-def _build_summary(
-    *,
-    group_name: str,
-    config: dict,
-    entries: list[WatchlistEntry],
-    refresh_summary: dict,
-    analyses: list[dict],
-    history_days: int,
-    max_movers: int,
-    max_candidates: int,
-    min_drop_pct: float,
-    min_drawdown_pct: float,
-) -> str:
-    monthly_budget = int(config.get("monthly_symbol_budget", DEFAULT_MONTHLY_BUDGET))
-    month_usage = _symbol_month_usage()
-    failed_symbols = refresh_summary.get("failed_symbols", [])
-    latest_dates = sorted({item["date"] for item in analyses})
-    movers_down = sorted(
-        [item for item in analyses if item["change_1d"] is not None],
-        key=lambda item: item["change_1d"],
-    )[:max_movers]
-    movers_up = sorted(
-        [item for item in analyses if item["change_1d"] is not None],
-        key=lambda item: item["change_1d"],
-        reverse=True,
-    )[:max_movers]
-    rebound_candidates = sorted(
-        [
-            item
-            for item in analyses
-            if item["change_1d"] is not None
-            and item["change_1d"] <= -abs(min_drop_pct)
-            and item["drawdown_20"] is not None
-            and item["drawdown_20"] <= -abs(min_drawdown_pct)
-            and item["rebound_score"] >= 3
-            and item["falling_knife_score"] <= 2
-        ],
-        key=lambda item: (-item["rebound_score"], item["change_1d"]),
-    )[:max_candidates]
-    falling_knives = sorted(
-        [
-            item
-            for item in analyses
-            if item["falling_knife_score"] >= 3
-            and item["change_1d"] is not None
-            and item["change_1d"] <= -abs(min_drop_pct)
-        ],
-        key=lambda item: item["change_1d"],
-    )[:max_candidates]
-
-    lines = [
-        f"Market watch group: {group_name}",
-        f"- Symbols analysed: {len(entries)}",
-        f"- History window: {history_days} calendar days cached locally in SQLite",
-        f"- Latest sessions in cache: {', '.join(latest_dates[-3:]) if latest_dates else 'none'}",
-        f"- Marketstack budget tracker: {month_usage}/{monthly_budget} symbol-requests this month",
-        (
-            "- Last refresh: "
-            f"{len(refresh_summary['refreshed_symbols'])} symbol(s) from Marketstack, "
-            f"{len(refresh_summary['cache_only_symbols'])} served from cache"
-        ),
-        "- Note: the free Marketstack plan is too small for a full CAC-style daily scan; keep the daily group tight and expand on demand.",
-        "",
-        "Top drops:",
-    ]
-    if failed_symbols:
-        failures = failed_symbols[:3]
-        extra = len(failed_symbols) - len(failures)
-        failure_line = "; ".join(failures)
-        if extra > 0:
-            failure_line += f"; +{extra} more"
-        lines.insert(-2, f"- Refresh issues: {failure_line}")
-    if movers_down:
-        lines.extend(_render_line(item) for item in movers_down)
-    else:
-        lines.append("- No cached movers yet.")
-
-    lines.append("")
-    lines.append("Top gains:")
-    if movers_up:
-        lines.extend(_render_line(item) for item in movers_up)
-    else:
-        lines.append("- No cached movers yet.")
-
-    lines.append("")
-    lines.append("Rebound candidates:")
-    if rebound_candidates:
-        lines.extend(_render_candidate(item) for item in rebound_candidates)
-    else:
-        lines.append("- No strong rebound setup detected with the current thresholds.")
-
-    lines.append("")
-    lines.append("Risky falling knives:")
-    if falling_knives:
-        lines.extend(_render_risk(item) for item in falling_knives)
-    else:
-        lines.append("- No obvious falling-knife setup in the current sample.")
-
-    lines.append("")
-    lines.append("Other strategy labels available:")
-    lines.append("- capitulation rebound: big drop, intraday recovery, often after panic or event risk.")
-    lines.append("- oversold mean reversion: multi-session washout, large drawdown versus recent highs.")
-    lines.append("- trend pullback: dip within a broader uptrend, less violent than a panic selloff.")
-    lines.append("- relative strength breakout: not a rebound, but useful to contrast with genuine weakness.")
-    lines.append("")
-    lines.append("Next step:")
-    lines.append("- For 1 to 3 names only, use web_search/web_fetch to validate the why before acting.")
-    return "\n".join(lines)
 
 
 @register(
     name="market_watch",
     description=(
-        "Refresh end-of-day market data from Marketstack with local SQLite caching, "
-        "then analyze movers and rebound candidates for the configured watchlist."
+        "Screen a watchlist for rebound or swing setups using Degiro close-only "
+        "daily data. Returns ranked candidates, rejects ('falling knives' for "
+        "rebound, trend breakdowns for swing) and neutrals. Use degiro_indicators "
+        "or degiro_candles to zoom into a single name."
     ),
     parameters={
         "type": "object",
         "properties": {
+            "strategy": {
+                "type": "string",
+                "enum": ["rebound", "swing"],
+                "description": "Screening strategy.",
+            },
             "group": {
                 "type": "string",
-                "description": "Watchlist group name from skills/market-watch/watchlist.json. Defaults to the file's default_group.",
-            },
-            "refresh": {
-                "type": "boolean",
-                "description": "Fetch missing or stale EOD data from Marketstack before analyzing. Defaults to true.",
-            },
-            "force_refresh": {
-                "type": "boolean",
-                "description": "Force a historical backfill for the target group, even if cache exists. Defaults to false.",
-            },
-            "history_days": {
-                "type": "integer",
-                "description": "History window to analyze, capped by available cache and Marketstack plan limits. Defaults to 120.",
-            },
-            "max_movers": {
-                "type": "integer",
-                "description": "Maximum number of top rises and top falls to include. Defaults to 6.",
+                "description": "Watchlist group name. Default: value of default_group.",
             },
             "max_candidates": {
                 "type": "integer",
-                "description": "Maximum number of rebound candidates and risky falling knives. Defaults to 5.",
-            },
-            "min_drop_pct": {
-                "type": "number",
-                "description": "Minimum 1-day drop percentage to flag a rebound candidate. Defaults to 4.0.",
-            },
-            "min_drawdown_pct": {
-                "type": "number",
-                "description": "Minimum drawdown versus the 20-day high to flag a rebound candidate. Defaults to 10.0.",
+                "description": f"Max candidates to list. Default {DEFAULT_MAX_CANDIDATES}.",
             },
         },
-        "required": [],
+        "required": ["strategy"],
     },
 )
 def market_watch(
+    strategy: str,
     group: str | None = None,
-    refresh: bool = True,
-    force_refresh: bool = False,
-    history_days: int = DEFAULT_HISTORY_DAYS,
-    max_movers: int = DEFAULT_MAX_MOVERS,
     max_candidates: int = DEFAULT_MAX_CANDIDATES,
-    min_drop_pct: float = DEFAULT_MIN_DROP_PCT,
-    min_drawdown_pct: float = DEFAULT_MIN_DRAWNDOWN_PCT,
 ) -> str:
+    if not degiro.degiro_available():
+        return "Error: Degiro is not configured. Set degiro_username / degiro_password."
+    if strategy not in ("rebound", "swing"):
+        return "Error: strategy must be 'rebound' or 'swing'."
+
     try:
-        group_name, entries, config = _resolve_watchlist(group)
+        group_name, entries = _resolve_group(group)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
         return f"Error: {exc}"
     if not entries:
         return "Error: the resolved watchlist is empty."
 
-    if refresh and not cfg.marketstack_api_key:
-        return (
-            "Error: MARKETSTACK_API_KEY is not configured. "
-            f"Add it in the add-on options, then retry. Watchlist file: {_watchlist_abspath()}"
-        )
+    results = [_analyze_entry(e, strategy) for e in entries]
 
-    refresh_summary = {"refreshed_symbols": [], "cache_only_symbols": []}
-    if refresh:
-        try:
-            refresh_summary = _refresh_market_data(entries, history_days, force_refresh)
-        except Exception as exc:
-            return f"Error: failed to refresh market data from Marketstack: {exc}"
+    candidates = sorted(
+        [r for r in results if "verdict" in r and r["verdict"].signal == "candidate"],
+        key=lambda r: r["verdict"].score,
+        reverse=True,
+    )[:max_candidates]
+    rejects = [
+        r for r in results if "verdict" in r and r["verdict"].signal == "reject"
+    ]
+    neutrals = [
+        r for r in results if "verdict" in r and r["verdict"].signal == "neutral"
+    ]
+    errors = [r for r in results if "error" in r]
 
-    series = _load_series(entries, history_days)
-    analyses: list[dict] = []
-    missing_entries: list[str] = []
-    for entry in entries:
-        bars = series.get((entry.symbol, entry.exchange), [])
-        analysis = _analyze_entry(entry, bars)
-        if analysis is None:
-            missing_entries.append(f"{entry.symbol}:{entry.exchange}")
-            continue
-        analyses.append(analysis)
+    lines = [
+        f"Market watch — strategy={strategy} | group={group_name} | entries={len(entries)}",
+        "",
+        f"Candidates ({len(candidates)}):",
+    ]
+    if candidates:
+        lines.extend(_render_verdict(r) for r in candidates)
+    else:
+        lines.append("- none")
 
-    if not analyses:
-        details = ", ".join(missing_entries) if missing_entries else "none"
-        return (
-            "Error: no usable market history is cached for this watchlist. "
-            f"Entries without data: {details}. "
-            "Run market_watch with refresh=true after configuring MARKETSTACK_API_KEY."
-        )
+    label = "Falling knives" if strategy == "rebound" else "Trend breakdowns"
+    lines.append("")
+    lines.append(f"{label} ({len(rejects)}):")
+    if rejects:
+        lines.extend(_render_verdict(r) for r in rejects)
+    else:
+        lines.append("- none")
 
-    summary = _build_summary(
-        group_name=group_name,
-        config=config,
-        entries=entries,
-        refresh_summary=refresh_summary,
-        analyses=analyses,
-        history_days=history_days,
-        max_movers=max_movers,
-        max_candidates=max_candidates,
-        min_drop_pct=min_drop_pct,
-        min_drawdown_pct=min_drawdown_pct,
+    lines.append("")
+    lines.append(f"Neutral ({len(neutrals)}):")
+    if neutrals:
+        lines.extend(_render_verdict(r) for r in neutrals[:max_candidates])
+    else:
+        lines.append("- none")
+
+    if errors:
+        lines.append("")
+        lines.append(f"Skipped ({len(errors)}):")
+        lines.extend(_render_verdict(r) for r in errors)
+
+    lines.append("")
+    lines.append(
+        "Note: Degiro is close-only — no volume / OHL confirmations. "
+        "Cross-check with web_search / web_fetch on a named candidate before acting."
     )
-    if missing_entries:
-        summary += "\n\nMissing cache rows:\n- " + "\n- ".join(missing_entries[:10])
-    return summary
+    return "\n".join(lines)

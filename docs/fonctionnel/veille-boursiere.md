@@ -2,77 +2,87 @@
 
 ## Perimetre
 
-La V1 de veille boursiere repose sur des donnees `end-of-day` uniquement. Le projet ne vise pas le temps reel ni l'intraday: l'usage cible est la veille, l'alerte et les strategies simples de rebond a partir des clotures.
+La veille boursiere repose desormais sur Degiro: donnees close-only intraday (PT10M, PT15M, PT1H), daily (P1D) et hebdomadaire (P7D). Le flux est directement branche au compte courtier de l'utilisateur, donc pas de quota externe a surveiller. Marketstack n'est plus utilise et son plan gratuit etait de toute facon trop serre pour un scan quotidien type CAC40 + US.
 
-## Tool natif
+## Source de donnees
 
-Le tool `market_watch` porte l'integration produit:
+- Bibliotheque `degiro_client` vendored sous `my-agent/vendor/degiro_client/` (depuis `Degiro-API`).
+- La copie vendored est **strip** de toutes les methodes d'ordre (`place_order`, `check_order`, `confirm_order`, `cancel_order`). L'agent **ne peut pas** passer d'ordre.
+- Provider singleton: `agent/degiro.py`. Gere le login initial, le relogin auto (25 min d'inactivite), et la detection de changement de credentials via fingerprint HMAC-SHA256 persiste dans `/data/degiro/.creds_fingerprint`.
+- Timestamps: Degiro renvoie des `datetime` naifs en heure Paris. Le provider convertit systematiquement en UTC (via `zoneinfo.ZoneInfo("Europe/Paris")`) avant persistance SQLite.
 
-- il lit une watchlist structuree depuis `workspace/skills/market-watch/watchlist.json`;
-- il rafraichit les donnees EOD via Marketstack si necessaire;
-- il stocke l'historique localement dans SQLite;
-- il renvoie un resume directement exploitable par l'agent: top hausses, top baisses, candidats rebond, falling knives, rappel de quota et incidents de refresh eventuels.
+### Limitation close-only
 
-Le tool reste volontairement compact: il ne fait pas lui-meme la recherche du "why". Cette etape est deleguee au tandem `web_search` + `web_fetch` pour ne cibler que les quelques dossiers vraiment interessants.
+- `price_history()` renvoie **uniquement `close` et `timestamp`**. `open`, `high`, `low`, `volume` ne sont jamais peuples.
+- Les indicateurs disponibles sont donc close-only: pas de confirmations "volume au retournement" ou "volume sur breakout" cote tool.
+- Pour un breakout douteux, croiser avec `web_search` / `web_fetch`.
 
-## Cache et quota
+### Anomalie `P1W` / `P7D`
 
-Le cache local vit dans deux tables SQLite:
+Degiro accepte `resolution=P1W` en requete mais renvoie `P7D` dans la serie. HA-Agent traite `P7D` comme la resolution canonique hebdomadaire.
 
-- `market_eod_prices`: historique EOD par `symbol`, `exchange` et `date`;
-- `market_api_usage`: audit local des consommations Marketstack en equivalent "symbol-requests".
+## Tools exposes
 
-Le comportement recherche est:
+- `market_watch(strategy, group=?, max_candidates=?)`: screener par strategie (`rebound` ou `swing`) sur la watchlist. Renvoie candidats, rejets (falling knives pour rebound), neutres.
+- `degiro_portfolio(include_closed=?)`: snapshot du portefeuille (positions, cash, P&L jour et cumulatif). Accepte les lignes `FLATEX_EUR` et les positions sans historique.
+- `degiro_search(query, limit=?)`: resolution symbole / ISIN / exchange / currency.
+- `degiro_quote(query)`: prix courant, variation jour, drawdown vs 52w high, distance au 52w low, via `price_metadata()`.
+- `degiro_candles(query, window=?, limit=?)`: serie close-only, fenetres `today-10m`, `5d-1h`, `1m-1d`, `3m-1d`, `1y-1d`, `5y-1w`.
+- `degiro_indicators(query, strategy)`: verdict structure (signal + score + raisons + metriques brutes) pour `rebound` ou `swing`.
 
-- ne pas rappeler Marketstack si un symbole a deja ete rafraichi dans la journee et que le cache local est suffisant;
-- faire un backfill historique seulement si l'historique local est trop court ou si un refresh force est demande;
-- separer les appels par exchange afin de desambiguizer les symboles courts du marche francais (`AI`, `OR`, etc.);
-- si un appel batch Marketstack echoue sur une erreur cliente, retenter symbole par symbole pour isoler un ticker invalide sans bloquer tout le groupe;
-- garder un groupe quotidien restreint car le plan gratuit n'est pas adapte a un full scan quotidien type CAC40 + US.
+## Cache SQLite
 
-Hypothese produit retenue: la doc Marketstack indique que chaque symbole dans `symbols=` consomme une requete. L'audit interne suit donc ce modele de quota. C'est une inference de produit a revalider en integration reelle si Marketstack facture differemment sur certains endpoints.
+Deux tables locales (creees par `agent/db.py`):
 
-## Watchlist workspace
+- `degiro_products`: `PRIMARY KEY(query_norm)`. Cache de resolution produit avec flags `history_ok`, `metadata_ok`. TTL 7 jours.
+- `degiro_prices`: **close-first**, `PRIMARY KEY(vwd_id, resolution, ts)`. `close NOT NULL`, `open/high/low/volume` nullables (reserves pour compat future). TTL par resolution: intraday 5 min, H1 30 min, daily 8 h, hebdo 24 h.
 
-La watchlist embarquee est un fichier workspace utilisateur, donc editable sans rebuild:
+Les tables `market_eod_prices` et `market_api_usage` sont supprimees (DROP au boot).
 
-- `skills/market-watch/watchlist.json`
+## Strategies
 
-Le fichier fournit:
+### Rebond
+- RSI(14) < 30 (marque "extreme" si < 20).
+- Drawdown vs `highPriceP1Y` (seuil defaut -20 %).
+- Proximite d'un niveau de support dense (clustering des closes).
+- Debut de reprise: close(t) > close(t-1) ou stabilisation sur 2-3 points.
+- Rejet automatique "falling knife" si cluster de support casse (close < densest_level * 0.98) + RSI < 30 + pente SMA50 negative.
 
-- `default_group`: groupe utilise par defaut;
-- `monthly_symbol_budget`: budget interne plus conservateur que le plafond theorique;
-- des groupes de symboles:
-  - `core_daily` pour la veille quotidienne;
-  - `cac_seed` comme base francaise a elargir et valider;
-  - `us_key` pour les grandes actions US.
+### Swing
+- Tendance haussiere: close > SMA200 **et** SMA50 > SMA200.
+- Pullback propre: |close - SMA50| / SMA50 ≤ 3 % sur fond de pente SMA50 positive.
+- Reprise close-only: close(t) > close(t-1).
+- Breakout close-only: close > max des 20 closes precedents (pas de critere volume).
 
-`cac_seed` est une base pratique, pas une promesse de composition CAC40 officiellement validee ou figee. Les symboles exacts Marketstack et la composition cible doivent rester ajustables dans le fichier.
+Ces indicateurs sont implementes en Python pur dans `agent/indicators.py` (RSI Wilder, SMA, slope, breakout, support/resistance, evaluate_rebound, evaluate_swing).
 
-## Heuristiques de strategie
+## Watchlist
 
-Le tool classe des signaux simples a partir de l'historique quotidien:
+- Fichier workspace: `skills/market-watch/watchlist.json`.
+- **Format ISIN-first**: `{ "isin": "...", "label": "...", "currency": "EUR", "exchange_id": "..." (optionnel) }`.
+- `exchange_id` et `currency` sont fortement recommandes pour desambiguer les listings multiples (ADR, XETRA, Euronext...).
+- Groupes fournis: `core_daily`, `us_key`.
 
-- `capitulation rebound`: forte baisse avec reprise depuis le plus bas du jour;
-- `oversold mean reversion`: baisse multi-seances et drawdown marque versus les plus hauts recents;
-- `trend pullback`: correction plus propre au sein d'une tendance moins abimee;
-- `falling knife`: cloture proche des plus bas et faibles signes d'absorption.
+## Pipeline de resolution produit
 
-Ces labels sont des heuristiques de tri, pas des recommandations de trading.
+1. `search_products(query, limit=20)`.
+2. Filtrage: ISIN exact > `exchange_id` > `currency` > presence de `vwd_id`.
+3. Validation `price_history(vwd_id, period="P1M", resolution="P1D")`: ≥ 5 candles -> `history_ok=True`.
+4. Validation `price_metadata(vwd_id)`: dict non vide -> `metadata_ok=True`.
+5. Persistance `degiro_products`.
+
+Les positions sans `vwd_id` ou sans historique sont affichees avec le prix actuel, mais `degiro_indicators` refuse explicitement d'analyser un produit dont `history_ok=False`.
 
 ## Why via web
 
-Une fois les 1 a 3 cas les plus interessants identifies avec `market_watch`, l'agent peut:
+Une fois les 1 a 3 candidats retenus:
 
-1. lancer `web_search` cible sur le nom de la societe, le ticker et la date recente;
-2. lire l'article le plus credible avec `web_fetch`;
-3. distinguer baisse technique, news sectorielle et deterioration fondamentale.
-
-Cette separation est importante: un candidat "rebond" technique peut etre invalide par un vrai changement de these.
+1. `web_search` sur le nom / ticker.
+2. `web_fetch` sur l'article le plus credible.
+3. Distinguer baisse technique, news sectorielle, deterioration fondamentale.
 
 ## Points d'attention
 
-- Si la watchlist contient des titres US, un run apres la cloture parisienne mais avant la cloture US produira naturellement des dates de reference heterogenes.
-- Les erreurs HTTP Marketstack doivent remonter avec leur detail API (`code`, `message`, `context`) pour rendre un echec actionnable sans relire les logs bruts.
-- Toute evolution de `market_watch` doit aussi mettre a jour `tools.md`.
-- Toute evolution de structure de `watchlist.json` doit aussi mettre a jour `workspace-et-memoire.md`.
+- Toute evolution de la famille `degiro_*` ou de `market_watch` doit aussi mettre a jour `tools.md`, `portefeuille.md`, et les skills `market-watch` / `portfolio-advisor`.
+- Toute evolution du format `watchlist.json` doit aussi mettre a jour `workspace-et-memoire.md`.
+- Le client vendored doit rester **strip** des methodes d'ordre. Voir `my-agent/vendor/degiro_client/VENDORED.md`.

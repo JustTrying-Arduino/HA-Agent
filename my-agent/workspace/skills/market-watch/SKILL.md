@@ -1,37 +1,55 @@
 # Market Watch
 
 ## Purpose
-Analyse les hausses et baisses d'une watchlist actions en end-of-day, repere les grosses baisses exploitables en strategie de rebond, et complete le "why" par une recherche web ciblee seulement sur les cas les plus pertinents.
+Screener watchlist Degiro (rebond/swing, close-only) — utiliser pour veille boursiere, detecter des setups, ou zoomer sur un titre de la watchlist.
 
 ## Use This Skill When
-- L'utilisateur demande une veille boursiere quotidienne ou ponctuelle sur une watchlist CAC / US.
-- L'utilisateur veut identifier des baisses fortes, drawdowns et signaux simples de rebond.
-- L'utilisateur veut comprendre rapidement pourquoi une action a baisse avant de qualifier une strategie.
+- L'utilisateur demande une veille boursiere sur sa watchlist CAC / US.
+- L'utilisateur veut identifier des setups de rebond (RSI extreme, support, debut de reprise) ou de swing (tendance haussiere, pullback propre, breakout).
+- L'utilisateur veut zoomer sur un titre particulier et lire les indicateurs cles.
 
 ## Workflow
-- Commencer par `market_watch` pour rafraichir le cache Marketstack et obtenir un tri des hausses, baisses, candidats rebond et falling knives.
-- Utiliser par defaut le groupe `core_daily` pour tenir les quotas. N'elargir a des groupes plus gros que si l'utilisateur le demande ou si le plan Marketstack le permet.
-- Si `market_watch` remonte 1 a 3 vrais candidats, lancer ensuite `web_search` sur ces seuls noms pour chercher le "why" de la baisse.
-- Lire les articles les plus credibles avec `web_fetch` avant de conclure. Preferer Reuters, Bloomberg, Financial Times, WSJ, Les Echos, Boursorama ou la societe elle-meme.
-- Si la baisse vient d'un resultat, warning, guidance, downgrade, litigation, M&A, secteur ou macro, le dire explicitement: un rebond technique ne se traite pas pareil qu'une cassure fondamentale.
+1. `market_watch(strategy="rebound")` ou `market_watch(strategy="swing")` pour classer la watchlist (candidats / rejets / neutres).
+2. Pour un nom retenu, zoomer avec `degiro_indicators(query=..., strategy=...)` pour voir le detail des signaux et metriques.
+3. `degiro_candles(query=..., window=...)` pour lire la serie (close-only), surtout en intraday (`today-10m`).
+4. `web_search` puis `web_fetch` pour confirmer le "why" fondamental sur 1 a 3 noms maximum. Preferer Reuters, Bloomberg, FT, WSJ, Les Echos, Boursorama, ou l'entreprise.
+5. Conclure explicitement: un rebond technique ne se traite pas comme une cassure fondamentale.
 
-## Strategy Lens
-- `capitulation rebound`: grosse baisse jour J, reprise depuis le plus bas, parfois volume eleve. C'est un setup de rebond court terme, pas une these long terme.
-- `oversold mean reversion`: plusieurs seances de baisse et drawdown marque contre le plus haut recent. A verifier contre la cause fondamentale.
-- `trend pullback`: repli dans une tendance encore correcte. Generalement plus propre qu'un couteau qui tombe.
-- `falling knife`: cloture proche des plus bas, peu de reprise, drawdown deja profond. A eviter tant que le why n'est pas clarifie.
+## Strategies
 
-## Quota Discipline
-- Marketstack gratuit est trop serre pour un balayage quotidien "full CAC + US" si chaque symbole compte contre le quota.
-- Le cache SQLite local existe pour eviter de reconsommer l'API sans raison.
-- Le fichier `watchlist.json` embarque un groupe `core_daily` et des groupes plus larges. Adapter ce fichier avant d'augmenter la frequence.
-- Pour une veille quotidienne melangeant Paris et US, programmer le run apres la cloture US si l'on veut un snapshot homogene. Sinon assumer que les titres US peuvent avoir un jour de retard.
+### Rebond
+- RSI(14) < 30 (marque "extreme" si < 20).
+- Drawdown significatif vs plus haut 1 an (seuil defaut -20 %).
+- Close proche d'un niveau de support dense (cluster de cloture).
+- Debut de reprise (close > close-1 ou stabilisation sur 2-3 points).
+- Rejet automatique "falling knife" si support casse + RSI bas + pente SMA50 negative.
 
-## Files
-- Lire si besoin `skills/market-watch/watchlist.json` pour voir les groupes disponibles et ajuster la watchlist.
-- Le cache de prix et l'audit de quota vivent dans SQLite, pas dans le workspace.
+### Swing
+- Close > SMA200 **et** SMA50 > SMA200.
+- Pullback propre vers la SMA50 (ecart |close - SMA50|/SMA50 <= 3 %) sur fond de pente SMA50 positive.
+- Reprise close-only (close aujourd'hui > close veille).
+- Breakout close-only: close franchit le plus haut des 20 cloture precedentes.
+
+## Limitations close-only
+- Degiro **ne fournit ni volume ni OHL**: aucune confirmation "volume au retournement" ou "volume sur breakout" n'est possible cote tool.
+- Toujours signaler cette limite quand l'utilisateur pose une question qui suggere une analyse OHLCV.
+- Pour un breakout douteux, croiser avec `web_search` / `web_fetch`.
+
+## Tools utilises
+- `market_watch`: screener par strategie sur la watchlist.
+- `degiro_indicators`: verdict structure sur un nom.
+- `degiro_candles`: serie close-only, supporte `today-10m`, `5d-1h`, `1m-1d`, `3m-1d`, `1y-1d`, `5y-1w`.
+- `degiro_quote`: prix courant + variation jour + drawdown 52w.
+- `degiro_search`: resolution ISIN / symbol / exchange quand l'utilisateur donne un nom flou.
+- `web_search` / `web_fetch`: pour le "why" fondamental.
+
+## Watchlist
+- Fichier: `skills/market-watch/watchlist.json`.
+- Format **ISIN-first**, chaque entree: `{ "isin": "...", "label": "...", "currency": "EUR", "exchange_id": "..." (optionnel) }`.
+- Ajouter `exchange_id` / `currency` en cas de risque d'ambiguite (ADR / listings multiples).
+- Groupes disponibles: lire le fichier pour la liste a jour (`default_group`, `core_daily`, `us_key`, ...).
 
 ## Output Style
-- Repondre en priorite avec: top baisses, top hausses, candidats rebond, risques a eviter.
-- Pour chaque candidat rebond retenu, distinguer clairement les faits de marche, le why issu du web, puis la conclusion strategique prudente.
-- Rappeler que ce skill sert a la veille et a l'alerte EOD, pas au trading intraday.
+- Structure: resume strategie -> liste des candidats -> rejets -> neutres -> limites close-only.
+- Pour chaque candidat: metriques brutes (RSI, SMA50, SMA200, drawdown, support) + pourquoi c'est un setup.
+- Rappeler le perimetre: veille et alerte, pas trading intraday automatise, pas de passage d'ordre par l'agent.

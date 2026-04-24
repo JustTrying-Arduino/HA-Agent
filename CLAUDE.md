@@ -85,5 +85,6 @@ Regles:
 - [`docs/fonctionnel/homeassistant.md`](./docs/fonctionnel/homeassistant.md): integration Supervisor, tools HA, filtrage par label
 - [`docs/fonctionnel/reminders.md`](./docs/fonctionnel/reminders.md): rappels, scheduler, cron
 - [`docs/fonctionnel/tools.md`](./docs/fonctionnel/tools.md): enregistrement, exposition, limites et effets visibles des tools
-- [`docs/fonctionnel/veille-boursiere.md`](./docs/fonctionnel/veille-boursiere.md): veille EOD via Marketstack, cache local et strategies simples de rebond
+- [`docs/fonctionnel/veille-boursiere.md`](./docs/fonctionnel/veille-boursiere.md): veille boursiere via Degiro (close-only), cache local, watchlist ISIN-first, strategies rebond / swing
+- [`docs/fonctionnel/portefeuille.md`](./docs/fonctionnel/portefeuille.md): lecture portefeuille Degiro, skill `portfolio-advisor`, regle "jamais d'ordre", limitations close-only
 - [`docs/fonctionnel/workspace-et-memoire.md`](./docs/fonctionnel/workspace-et-memoire.md): workspace persistant, skills, memoire durable

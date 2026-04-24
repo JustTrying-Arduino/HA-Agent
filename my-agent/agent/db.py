@@ -80,39 +80,38 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_reminders_chat_status
             ON reminders(chat_id, status);
 
-        CREATE TABLE IF NOT EXISTS market_eod_prices (
-            symbol TEXT NOT NULL,
-            exchange TEXT NOT NULL,
-            date TEXT NOT NULL,
+        CREATE TABLE IF NOT EXISTS degiro_products (
+            query_norm TEXT PRIMARY KEY,
+            isin TEXT,
+            product_id TEXT,
+            vwd_id TEXT,
+            symbol TEXT,
             name TEXT,
             currency TEXT,
+            exchange_id TEXT,
+            history_ok INTEGER NOT NULL DEFAULT 0,
+            metadata_ok INTEGER NOT NULL DEFAULT 0,
+            fetched_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS degiro_prices (
+            vwd_id TEXT NOT NULL,
+            resolution TEXT NOT NULL,
+            ts TEXT NOT NULL,
+            close REAL NOT NULL,
             open REAL,
             high REAL,
             low REAL,
-            close REAL,
             volume REAL,
             fetched_at TEXT NOT NULL,
-            PRIMARY KEY(symbol, exchange, date)
+            PRIMARY KEY (vwd_id, resolution, ts)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_market_eod_symbol_exchange_date
-            ON market_eod_prices(symbol, exchange, date DESC);
+        CREATE INDEX IF NOT EXISTS idx_degiro_prices_vwd_res_ts
+            ON degiro_prices (vwd_id, resolution, ts DESC);
 
-        CREATE TABLE IF NOT EXISTS market_api_usage (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT NOT NULL,
-            endpoint TEXT NOT NULL,
-            request_kind TEXT NOT NULL,
-            exchange TEXT,
-            symbols TEXT NOT NULL,
-            symbols_count INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            row_count INTEGER NOT NULL DEFAULT 0,
-            note TEXT
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_market_api_usage_timestamp
-            ON market_api_usage(timestamp);
+        DROP TABLE IF EXISTS market_eod_prices;
+        DROP TABLE IF EXISTS market_api_usage;
     """)
     db.commit()
 

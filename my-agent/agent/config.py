@@ -12,7 +12,9 @@ class Config:
     openai_model_light: str = "gpt-4.1-mini"
     groq_api_key: str = ""
     brave_api_key: str = ""
-    marketstack_api_key: str = ""
+    degiro_username: str = ""
+    degiro_password: str = ""
+    degiro_totp_seed: str = ""
     telegram_bot_token: str = ""
     telegram_allowed_chat_ids: list[int] = field(default_factory=list)
     session_timeout_hours: int = 48
@@ -40,7 +42,9 @@ class Config:
             openai_model_light=os.environ.get("OPENAI_MODEL_LIGHT", "gpt-4.1-mini"),
             groq_api_key=os.environ.get("GROQ_API_KEY", ""),
             brave_api_key=os.environ.get("BRAVE_API_KEY", ""),
-            marketstack_api_key=os.environ.get("MARKETSTACK_API_KEY", ""),
+            degiro_username=os.environ.get("DEGIRO_USERNAME", ""),
+            degiro_password=os.environ.get("DEGIRO_PASSWORD", ""),
+            degiro_totp_seed=os.environ.get("DEGIRO_TOTP_SEED", ""),
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
             telegram_allowed_chat_ids=chat_ids,
             session_timeout_hours=int(os.environ.get("SESSION_TIMEOUT_HOURS", "48")),

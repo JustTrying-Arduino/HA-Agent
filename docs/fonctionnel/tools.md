@@ -26,7 +26,8 @@ Règles à préserver:
 - shell: exécution de commandes système;
 - fichiers: lecture, écriture, édition simple, listing;
 - web: recherche et récupération de contenu;
-- market: veille boursière EOD via Marketstack avec cache SQLite local;
+- market: `market_watch` — screener par stratégie (rebound / swing) sur une watchlist, alimenté par Degiro (close-only);
+- degiro: `degiro_portfolio`, `degiro_search`, `degiro_quote`, `degiro_candles`, `degiro_indicators` — lecture seule, aucune capacité de passer un ordre (méthodes `place_order`, `check_order`, `confirm_order`, `cancel_order` physiquement retirées du client vendored);
 - home assistant: recherche d'entités exposées, lecture d'état et appel de services via Supervisor;
 - reminders: création et gestion de rappels;
 - routage: `escalate_model` pour la bascule de modèle.
@@ -36,7 +37,8 @@ Règles à préserver:
 ## Exposition conditionnelle
 
 - `web_search` n'est exposé que si `cfg.brave_api_key` est configurée.
-- `market_watch` dépend d'une clé `cfg.marketstack_api_key` côté exécution pour pouvoir rafraîchir les données EOD; ses erreurs Marketstack doivent rester lisibles et inclure le détail de validation renvoyé par l'API quand il existe.
+- les tools de la famille `degiro_*` ne sont exposés que si `cfg.degiro_username` et `cfg.degiro_password` sont configurés. Le provider gère le login initial et le relogin auto via fingerprint HMAC-SHA256 (voir `veille-boursiere.md`).
+- `market_watch` dépend du même prérequis Degiro, et lit la watchlist workspace `skills/market-watch/watchlist.json` (format ISIN-first).
 - les tools Home Assistant ne sont exposés que si `cfg.supervisor_token` est configuré.
 - les tools Home Assistant limitent l'accès aux entités portant le label `cfg.ha_expose_label`.
 - `escalate_model` n'est exposé que tant que le run est encore sur le modèle léger.
@@ -47,8 +49,8 @@ Règles à préserver:
 - lecture de fichier tronquée à 50 000 caractères;
 - récupération web tronquée à 20 000 caractères.
 - cache de résolution du label Home Assistant: 60 secondes.
-- veille boursière bornée à des heuristiques EOD simples et à une watchlist workspace explicitement configurée.
-- en veille boursière, un échec batch Marketstack côté client peut être redescendu en retries symbole par symbole pour éviter qu'un ticker invalide bloque tout le groupe.
+- veille boursière: indicateurs close-only (Degiro ne fournit ni volume ni OHL). Les confirmations volume ne sont pas disponibles — croiser avec `web_search` / `web_fetch` si nécessaire.
+- famille `degiro_*`: lecture seule. Les méthodes de passage d'ordre ne sont pas importables (retirées du client vendored). Le portefeuille peut être lu, les analyses techniques proposées, mais aucun ordre ne peut être déclenché par l'agent.
 
 Le projet ne sandboxe pas les tools à l'intérieur du conteneur. Cette liberté est intentionnelle et fait partie du contrat d'usage du projet.
 

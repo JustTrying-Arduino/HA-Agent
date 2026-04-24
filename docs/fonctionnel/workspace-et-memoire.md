@@ -15,6 +15,7 @@ Les fichiers présents dans `my-agent/workspace/` servent de templates initiaux 
 - `chats/<chat_id>.md`: contexte durable spécifique à une conversation Telegram précise.
 - `skills/<name>/SKILL.md`: compétences étroites, actionnables, spécialisées.
 - `skills/<name>/...`: une skill peut aussi embarquer des fichiers auxiliaires lisibles par l'agent ou par des tools, par exemple une watchlist JSON.
+- `skills/market-watch/watchlist.json`: **format ISIN-first**. Chaque entrée: `{ "isin": "...", "label": "...", "currency": "EUR", "exchange_id": "..." (optionnel) }`. `exchange_id` et `currency` sont recommandés pour éviter les ambiguïtés de listing (ADR, XETRA...).
 
 ## Règles d'usage
 

@@ -42,6 +42,8 @@ def main():
     import agent.tools.market  # noqa: F401
     import agent.tools.reminders  # noqa: F401
     import agent.tools.router  # noqa: F401
+    if cfg.degiro_username and cfg.degiro_password:
+        import agent.tools.degiro  # noqa: F401
     if cfg.brave_api_key:
         import agent.tools.web  # noqa: F401
     else:

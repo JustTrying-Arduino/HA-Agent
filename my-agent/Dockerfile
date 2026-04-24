@@ -7,11 +7,12 @@ COPY requirements.txt /tmp/
 RUN pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 
 COPY agent/ /opt/agent/
+COPY vendor/ /opt/vendor/
 COPY workspace/ /usr/local/share/workspace/
 COPY run.sh /
 RUN chmod +x /run.sh
 
 WORKDIR /opt
-ENV PYTHONPATH=/opt
+ENV PYTHONPATH=/opt:/opt/vendor
 
 CMD ["/run.sh"]

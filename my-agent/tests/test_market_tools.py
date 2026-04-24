@@ -1,32 +1,167 @@
+"""Tests for agent.indicators and agent.tools.market (Degiro-backed)."""
+
+from __future__ import annotations
+
 import importlib
 import json
 import sys
 import tempfile
 import types
 import unittest
-from datetime import date, timedelta
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "vendor"))
 
-from agent import db  # noqa: E402
+from agent import db, indicators  # noqa: E402
 from agent.config import cfg  # noqa: E402
 
-sys.modules.setdefault("requests", types.SimpleNamespace(get=None))
+
+class IndicatorTests(unittest.TestCase):
+    def test_sma(self):
+        self.assertEqual(indicators.sma([1, 2, 3, 4, 5], 5), 3.0)
+        self.assertEqual(indicators.sma([1, 2, 3, 4, 5], 3), 4.0)
+        self.assertIsNone(indicators.sma([1, 2], 5))
+
+    def test_rsi_monotonic_rise_saturates_high(self):
+        closes = list(range(1, 30))
+        rsi = indicators.rsi14(closes)
+        self.assertIsNotNone(rsi)
+        self.assertGreater(rsi, 80)
+
+    def test_rsi_monotonic_drop_saturates_low(self):
+        closes = [float(x) for x in range(30, 0, -1)]
+        rsi = indicators.rsi14(closes)
+        self.assertIsNotNone(rsi)
+        self.assertLess(rsi, 20)
+
+    def test_breakout_20d(self):
+        closes = [10.0] * 20 + [11.0]
+        self.assertTrue(indicators.breakout_20d(closes))
+        closes2 = [10.0] * 20 + [10.0]
+        self.assertFalse(indicators.breakout_20d(closes2))
+        self.assertFalse(indicators.breakout_20d([1, 2, 3]))
+
+    def test_variation(self):
+        closes = [100.0, 110.0]
+        self.assertAlmostEqual(indicators.variation(closes, 1), 10.0)
+        self.assertIsNone(indicators.variation([100.0], 1))
+
+    def test_support_levels_dense_cluster(self):
+        closes = [100.0, 101.0, 99.5, 100.5, 150.0, 151.0, 149.5]
+        levels = indicators.support_levels(closes, tol=0.02, min_count=3)
+        self.assertEqual(len(levels), 2)
+        # densest bucket first
+        self.assertGreaterEqual(levels[0].count, levels[1].count)
+
+    def test_drawdown_from_high(self):
+        self.assertAlmostEqual(indicators.drawdown_from_high(80.0, 100.0), -20.0)
+        self.assertIsNone(indicators.drawdown_from_high(None, 100.0))
+        self.assertIsNone(indicators.drawdown_from_high(80.0, None))
+
+    def test_evaluate_rebound_reject_falling_knife(self):
+        # Dense support around 100, then sharp break below with RSI falling and SMA50 turning down.
+        closes = [100.0 + (i % 3) * 0.2 for i in range(80)]
+        closes += [100.0 - i * 1.5 for i in range(1, 41)]
+        verdict = indicators.evaluate_rebound(closes, high_52w=105.0)
+        self.assertEqual(verdict.signal, "reject")
+        self.assertTrue(any("falling knife" in r for r in verdict.reasons))
+
+    def test_evaluate_swing_requires_long_history(self):
+        verdict = indicators.evaluate_swing([1.0] * 100)
+        self.assertEqual(verdict.signal, "neutral")
+        self.assertTrue(any("not enough history" in r for r in verdict.reasons))
+
+    def test_evaluate_swing_trend_up_candidate(self):
+        # 220 closes rising linearly then a small pullback and recovery.
+        closes = [float(i) for i in range(1, 211)]
+        closes.append(closes[-1] * 0.99)  # pullback
+        closes.append(closes[-1] * 1.02)  # recovery — also triggers breakout
+        verdict = indicators.evaluate_swing(closes)
+        self.assertEqual(verdict.signal, "candidate")
+        self.assertGreaterEqual(verdict.score, 3)
+
+    def test_unknown_strategy_raises(self):
+        with self.assertRaises(ValueError):
+            indicators.evaluate("unknown", [1.0, 2.0, 3.0])
 
 
-class _FakeResponse:
-    def __init__(self, payload: dict, *, status_code: int = 200, text: str | None = None):
-        self._payload = payload
-        self.status_code = status_code
-        self.text = text if text is not None else json.dumps(payload)
+# ---------------------------------------------------------------------------
+# market_watch integration test with fake DegiroClient
+# ---------------------------------------------------------------------------
 
-    def raise_for_status(self):
+
+@dataclass
+class FakeProduct:
+    id: str
+    symbol: str | None
+    name: str | None
+    isin: str | None
+    currency: str | None
+    vwd_id: str | None
+    product_type: str | None = None
+    exchange_id: str | None = None
+
+
+@dataclass
+class FakeCandle:
+    timestamp: object
+    close: float
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
+    volume: float | None = None
+
+
+class FakeDegiroClient:
+    def __init__(self, series: dict[str, list[float]]):
+        self._series = series
+        self.session = object()  # non-None → get_client skips login
+
+    @staticmethod
+    def _product_for(query: str) -> FakeProduct:
+        q = query.upper()
+        return FakeProduct(
+            id=f"id-{q}",
+            symbol=q,
+            name=f"Name {q}",
+            isin=q if len(q) == 12 else None,
+            currency="EUR",
+            vwd_id=f"vwd-{q}",
+            exchange_id="710",
+        )
+
+    def search_products(self, query, limit=10):
+        return [self._product_for(query)]
+
+    def price_history(self, vwd_id, *, period="P1Y", resolution="P1D"):
+        closes = self._series.get(vwd_id, [])
+        if not closes:
+            return []
+        from datetime import datetime, timedelta
+        start = datetime(2026, 1, 1)
+        return [
+            FakeCandle(timestamp=start + timedelta(days=i), close=c)
+            for i, c in enumerate(closes)
+        ]
+
+    def price_metadata(self, vwd_id):
+        closes = self._series.get(vwd_id, [])
+        if not closes:
+            return {}
+        return {"highPriceP1Y": max(closes), "lowPriceP1Y": min(closes)}
+
+    def login(self, *a, **kw):
         return None
 
-    def json(self) -> dict:
-        return self._payload
+    def get_portfolio(self, only_open=True):
+        return []
+
+    def get_cash(self):
+        return {}
 
 
 class MarketWatchTests(unittest.TestCase):
@@ -34,10 +169,12 @@ class MarketWatchTests(unittest.TestCase):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.old_db_path = cfg.db_path
         self.old_workspace_path = cfg.workspace_path
-        self.old_marketstack_api_key = cfg.marketstack_api_key
+        self.old_username = cfg.degiro_username
+        self.old_password = cfg.degiro_password
         cfg.db_path = str(Path(self.tmpdir.name) / "agent.db")
         cfg.workspace_path = str(Path(self.tmpdir.name) / "workspace")
-        cfg.marketstack_api_key = "test-marketstack-key"
+        cfg.degiro_username = "testuser"
+        cfg.degiro_password = "testpass"
         db.close()
         db.init_db()
 
@@ -47,19 +184,20 @@ class MarketWatchTests(unittest.TestCase):
             json.dumps(
                 {
                     "default_group": "test_group",
-                    "monthly_symbol_budget": 80,
                     "groups": {
                         "test_group": [
-                            {"symbol": "AAA", "exchange": "XPAR", "name": "Alpha"},
-                            {"symbol": "BBB", "exchange": "XPAR", "name": "Beta"},
-                            {"symbol": "CCC", "exchange": "XPAR", "name": "Gamma"},
+                            {"isin": "US0000000AAA", "label": "Alpha", "currency": "EUR"},
+                            {"isin": "US0000000BBB", "label": "Beta", "currency": "EUR"},
                         ]
                     },
                 }
             )
         )
 
-        import agent.tools.market as market_tools  # noqa: E402
+        from agent import degiro as degiro_mod
+
+        self.degiro_mod = importlib.reload(degiro_mod)
+        import agent.tools.market as market_tools
 
         self.market_tools = importlib.reload(market_tools)
 
@@ -67,233 +205,84 @@ class MarketWatchTests(unittest.TestCase):
         db.close()
         cfg.db_path = self.old_db_path
         cfg.workspace_path = self.old_workspace_path
-        cfg.marketstack_api_key = self.old_marketstack_api_key
+        cfg.degiro_username = self.old_username
+        cfg.degiro_password = self.old_password
         self.tmpdir.cleanup()
 
-    def _insert_bars(self, symbol: str, closes: list[float], *, exchange: str = "XPAR", low_offset: float = 1.0):
-        db_conn = db.get_db()
-        base_date = date(2026, 3, 19)
-        payload = []
-        for idx, close in enumerate(closes):
-            current_date = (base_date + timedelta(days=idx)).isoformat()
-            payload.append(
-                (
-                    symbol,
-                    exchange,
-                    current_date,
-                    symbol,
-                    "eur",
-                    close + 0.5,
-                    close + 1.0,
-                    close - low_offset,
-                    close,
-                    1000 + (idx * 50),
-                    "2026-04-18T20:00:00Z",
-                )
-            )
-        db_conn.executemany(
-            """
-            INSERT INTO market_eod_prices(
-                symbol, exchange, date, name, currency, open, high, low, close, volume, fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            payload,
-        )
-        db.commit()
-
-    def test_market_watch_uses_cache_only_when_refresh_is_disabled(self):
-        self._insert_bars("AAA", [120, 118, 117, 115, 112, 110, 108, 107, 106, 104, 102, 101, 100, 97, 95, 94, 92, 90, 88, 87, 85, 84, 82, 81, 80, 78, 77, 76, 74, 79], low_offset=3.0)
-        self._insert_bars("BBB", [50 + i for i in range(30)])
-        self._insert_bars("CCC", [80 for _ in range(30)])
-
-        with patch.object(self.market_tools, "_today_utc", return_value=date(2026, 4, 18)):
-            result = self.market_tools.market_watch(
-                group="test_group",
-                refresh=False,
-                history_days=30,
-                max_movers=3,
-                max_candidates=3,
-            )
-
-        self.assertIn("Market watch group: test_group", result)
-        self.assertIn("Top drops:", result)
-        self.assertIn("Top gains:", result)
-        self.assertIn("AAA (XPAR)", result)
-
-    def test_market_watch_refreshes_from_marketstack_and_logs_usage(self):
-        payload = {
-            "pagination": {"limit": 1000, "offset": 0, "count": 6, "total": 6},
-            "data": [
-                {
-                    "symbol": "AAA",
-                    "exchange": "XPAR",
-                    "date": "2026-04-17T00:00:00+0000",
-                    "name": "Alpha",
-                    "price_currency": "eur",
-                    "open": 100.0,
-                    "high": 101.0,
-                    "low": 90.0,
-                    "close": 92.0,
-                    "volume": 2000.0,
-                },
-                {
-                    "symbol": "AAA",
-                    "exchange": "XPAR",
-                    "date": "2026-04-18T00:00:00+0000",
-                    "name": "Alpha",
-                    "price_currency": "eur",
-                    "open": 92.0,
-                    "high": 94.0,
-                    "low": 80.0,
-                    "close": 88.0,
-                    "volume": 5000.0,
-                },
-                {
-                    "symbol": "BBB",
-                    "exchange": "XPAR",
-                    "date": "2026-04-17T00:00:00+0000",
-                    "name": "Beta",
-                    "price_currency": "eur",
-                    "open": 50.0,
-                    "high": 52.0,
-                    "low": 49.0,
-                    "close": 51.0,
-                    "volume": 1500.0,
-                },
-                {
-                    "symbol": "BBB",
-                    "exchange": "XPAR",
-                    "date": "2026-04-18T00:00:00+0000",
-                    "name": "Beta",
-                    "price_currency": "eur",
-                    "open": 51.0,
-                    "high": 57.0,
-                    "low": 50.0,
-                    "close": 56.0,
-                    "volume": 2500.0,
-                },
-                {
-                    "symbol": "CCC",
-                    "exchange": "XPAR",
-                    "date": "2026-04-17T00:00:00+0000",
-                    "name": "Gamma",
-                    "price_currency": "eur",
-                    "open": 70.0,
-                    "high": 71.0,
-                    "low": 68.0,
-                    "close": 69.0,
-                    "volume": 1800.0,
-                },
-                {
-                    "symbol": "CCC",
-                    "exchange": "XPAR",
-                    "date": "2026-04-18T00:00:00+0000",
-                    "name": "Gamma",
-                    "price_currency": "eur",
-                    "open": 69.0,
-                    "high": 70.0,
-                    "low": 67.0,
-                    "close": 68.0,
-                    "volume": 1700.0,
-                },
-            ],
-        }
-
-        with patch.object(self.market_tools, "_today_utc", return_value=date(2026, 4, 18)), patch.object(
-            self.market_tools.requests, "get", return_value=_FakeResponse(payload)
-        ) as get_mock:
-            result = self.market_tools.market_watch(
-                group="test_group",
-                refresh=True,
-                force_refresh=True,
-                history_days=30,
-            )
-
-        self.assertIn("Last refresh: 3 symbol(s) from Marketstack", result)
-        self.assertEqual(get_mock.call_count, 1)
-        rows = db.fetchall("SELECT symbol, exchange, date FROM market_eod_prices ORDER BY symbol, date")
-        self.assertEqual(len(rows), 6)
-        usage = db.fetchall("SELECT symbols_count, status, row_count FROM market_api_usage")
-        self.assertEqual(
-            [(row["symbols_count"], row["status"], row["row_count"]) for row in usage],
-            [(3, "ok", 6)],
+    def test_market_watch_runs_swing_screen(self):
+        # Alpha: strong rising trend over 220 days → swing candidate.
+        # Beta: flat series → neutral.
+        alpha_closes = [float(i) + 50 for i in range(220)]
+        beta_closes = [100.0] * 220
+        fake_client = FakeDegiroClient(
+            {"vwd-US0000000AAA": alpha_closes, "vwd-US0000000BBB": beta_closes}
         )
 
-    def test_market_watch_requires_api_key_for_refresh(self):
-        cfg.marketstack_api_key = ""
-        result = self.market_tools.market_watch(group="test_group", refresh=True)
-        self.assertIn("MARKETSTACK_API_KEY is not configured", result)
+        with patch.object(self.degiro_mod, "get_client", return_value=fake_client), \
+             patch.object(self.market_tools.degiro, "get_client", return_value=fake_client):
+            result = self.market_tools.market_watch(strategy="swing", group="test_group")
 
-    def test_market_watch_falls_back_to_single_symbol_refresh_after_batch_error(self):
-        error_payload = {
-            "error": {
-                "code": "validation_error",
-                "message": "Request failed with validation error",
-                "context": {
-                    "symbols": [
-                        {
-                            "key": "invalid_symbol",
-                            "message": "BBB is not supported on XPAR",
-                        }
-                    ]
-                },
-            }
+        self.assertIn("Market watch — strategy=swing", result)
+        self.assertIn("Candidates", result)
+        self.assertIn("US0000000AAA", result)
+
+
+class ResolveProductCacheTests(unittest.TestCase):
+    """Regression: same ISIN with different listing filters must not collide in cache."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.old_db_path = cfg.db_path
+        self.old_username = cfg.degiro_username
+        self.old_password = cfg.degiro_password
+        cfg.db_path = str(Path(self.tmpdir.name) / "agent.db")
+        cfg.degiro_username = "testuser"
+        cfg.degiro_password = "testpass"
+        db.close()
+        db.init_db()
+
+        from agent import degiro as degiro_mod
+        self.degiro_mod = importlib.reload(degiro_mod)
+
+    def tearDown(self):
+        db.close()
+        cfg.db_path = self.old_db_path
+        cfg.degiro_username = self.old_username
+        cfg.degiro_password = self.old_password
+        self.tmpdir.cleanup()
+
+    def test_same_isin_different_exchange_do_not_collide(self):
+        isin = "FR0000121014"
+        listings = {
+            "710": FakeProduct(id="p-xpar", symbol="MC", name="LVMH XPAR",
+                               isin=isin, currency="EUR", vwd_id="vwd-xpar",
+                               exchange_id="710"),
+            "194": FakeProduct(id="p-xetra", symbol="MOH", name="LVMH XETRA",
+                               isin=isin, currency="EUR", vwd_id="vwd-xetra",
+                               exchange_id="194"),
         }
 
-        def fake_get(_url, params=None, **_kwargs):
-            symbols = params["symbols"]
-            if symbols == "AAA,BBB,CCC":
-                return _FakeResponse(error_payload, status_code=406)
-            if symbols == "BBB":
-                return _FakeResponse(error_payload, status_code=406)
+        class MultiListingClient(FakeDegiroClient):
+            def search_products(self, query, limit=10):
+                return list(listings.values())
 
-            payload = {
-                "pagination": {"limit": 1000, "offset": 0, "count": 2, "total": 2},
-                "data": [
-                    {
-                        "symbol": symbols,
-                        "exchange": "XPAR",
-                        "date": "2026-04-17T00:00:00+0000",
-                        "name": symbols,
-                        "price_currency": "eur",
-                        "open": 100.0,
-                        "high": 101.0,
-                        "low": 95.0,
-                        "close": 96.0,
-                        "volume": 2000.0,
-                    },
-                    {
-                        "symbol": symbols,
-                        "exchange": "XPAR",
-                        "date": "2026-04-18T00:00:00+0000",
-                        "name": symbols,
-                        "price_currency": "eur",
-                        "open": 96.0,
-                        "high": 98.0,
-                        "low": 90.0,
-                        "close": 92.0,
-                        "volume": 2600.0,
-                    },
-                ],
-            }
-            return _FakeResponse(payload)
+        fake = MultiListingClient({"vwd-xpar": [100.0] * 30, "vwd-xetra": [200.0] * 30})
 
-        with patch.object(self.market_tools, "_today_utc", return_value=date(2026, 4, 18)), patch.object(
-            self.market_tools.requests, "get", side_effect=fake_get
-        ) as get_mock:
-            result = self.market_tools.market_watch(
-                group="test_group",
-                refresh=True,
-                force_refresh=True,
-                history_days=30,
-            )
+        with patch.object(self.degiro_mod, "get_client", return_value=fake):
+            ref_xpar = self.degiro_mod.resolve_product(isin, exchange_id="710")
+            ref_xetra = self.degiro_mod.resolve_product(isin, exchange_id="194")
 
-        self.assertIn("Refresh issues: BBB:XPAR", result)
-        self.assertIn("HTTP 406 | validation_error", result)
-        self.assertIn("Missing cache rows:\n- BBB:XPAR", result)
-        self.assertEqual(get_mock.call_count, 4)
-        rows = db.fetchall("SELECT symbol, exchange, date FROM market_eod_prices ORDER BY symbol, date")
-        self.assertEqual([(row["symbol"], row["date"]) for row in rows], [("AAA", "2026-04-17"), ("AAA", "2026-04-18"), ("CCC", "2026-04-17"), ("CCC", "2026-04-18")])
+        self.assertEqual(ref_xpar.exchange_id, "710")
+        self.assertEqual(ref_xetra.exchange_id, "194")
+        self.assertNotEqual(ref_xpar.vwd_id, ref_xetra.vwd_id)
+        self.assertNotEqual(ref_xpar.query_norm, ref_xetra.query_norm)
+
+        from agent.db import fetchall
+        rows = fetchall(
+            "SELECT query_norm, exchange_id FROM degiro_products WHERE isin = ?",
+            (isin,),
+        )
+        self.assertEqual(len(rows), 2)
 
 
 if __name__ == "__main__":

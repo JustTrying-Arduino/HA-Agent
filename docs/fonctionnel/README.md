@@ -22,7 +22,8 @@ Cette documentation décrit le fonctionnement du projet pour les IA et les déve
 | [`homeassistant.md`](./homeassistant.md) | Pour l'intégration Supervisor, les tools HA natifs, le filtrage par label et la config associée. |
 | [`reminders.md`](./reminders.md) | Pour les rappels planifiés, le scheduler et le déclenchement des runs cron. |
 | [`tools.md`](./tools.md) | Pour ajouter ou modifier des tools, leurs règles d'exposition, leurs limites et leur exécution. |
-| [`veille-boursiere.md`](./veille-boursiere.md) | Pour le suivi EOD via Marketstack, le cache local, la watchlist et les heuristiques de rebond. |
+| [`veille-boursiere.md`](./veille-boursiere.md) | Pour le suivi boursier via Degiro (close-only), le cache local, la watchlist ISIN-first et les stratégies rebond / swing. |
+| [`portefeuille.md`](./portefeuille.md) | Pour la lecture du portefeuille Degiro, le skill `portfolio-advisor`, la règle « jamais d'ordre » et les limitations close-only. |
 | [`workspace-et-memoire.md`](./workspace-et-memoire.md) | Pour les fichiers workspace, la mémoire durable, les skills et leur cycle de vie. |
 
 ## Frontière avec les autres docs
