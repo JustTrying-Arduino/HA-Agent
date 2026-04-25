@@ -25,7 +25,7 @@ Degiro accepte `resolution=P1W` en requete mais renvoie `P7D` dans la serie. HA-
 
 - `market_watch(strategy, group=?, max_candidates=?)`: screener par strategie (`rebound` ou `swing`) sur la watchlist. Renvoie candidats, rejets (falling knives pour rebound), neutres.
 - `degiro_portfolio(include_closed=?)`: snapshot du portefeuille (positions, cash, P&L jour et cumulatif). Accepte les lignes `FLATEX_EUR` et les positions sans historique.
-- `degiro_search(query, limit=?)`: resolution symbole / ISIN / exchange / currency.
+- `degiro_search(query, limit=?)`: resolution symbole / ISIN / currency.
 - `degiro_quote(query)`: prix courant, variation jour, drawdown vs 52w high, distance au 52w low, via `price_metadata()`.
 - `degiro_candles(query, window=?, limit=?)`: serie close-only, fenetres `today-10m`, `5d-1h`, `1m-1d`, `3m-1d`, `1y-1d`, `5y-1w`.
 - `degiro_indicators(query, strategy)`: verdict structure (signal + score + raisons + metriques brutes) pour `rebound` ou `swing`.

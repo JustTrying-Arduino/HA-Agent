@@ -34,7 +34,7 @@ Tous lecture seule, exposes uniquement si les credentials sont configures.
 | Tool | Role |
 |------|------|
 | `degiro_portfolio(include_closed=?)` | Snapshot: positions, cash, P&L jour et cumulatif, cash pseudo-produits (`FLATEX_EUR`). |
-| `degiro_search(query, limit=?)` | Resolution produit: ISIN, symbol, exchange_id, currency, vwd_id. |
+| `degiro_search(query, limit=?)` | Resolution produit: ISIN, symbol, currency. |
 | `degiro_quote(query)` | Prix courant + variation jour + drawdown vs 52w high + distance au 52w low. Via `price_metadata()`. |
 | `degiro_candles(query, window=?, limit=?)` | Serie close-only. Fenetres: `today-10m`, `5d-1h`, `1m-1d`, `3m-1d`, `1y-1d`, `5y-1w`. |
 | `degiro_indicators(query, strategy)` | Verdict structure (`candidate` / `reject` / `neutral`) sur une strategie rebound ou swing. |

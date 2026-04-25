@@ -168,9 +168,7 @@ def degiro_search(query: str, limit: int = 5) -> str:
         bits = [
             p.symbol or "-",
             p.isin or "-",
-            f"exch={p.exchange_id or '-'}",
             f"ccy={p.currency or '-'}",
-            f"vwd={p.vwd_id or '-'}",
             p.name or "",
         ]
         lines.append("- " + " | ".join(bits))
