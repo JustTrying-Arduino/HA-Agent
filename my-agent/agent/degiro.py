@@ -135,6 +135,7 @@ class ProductRef:
     isin: str | None
     product_id: str | None
     vwd_id: str | None
+    vwd_identifier_type: str | None
     symbol: str | None
     name: str | None
     currency: str | None
@@ -171,6 +172,7 @@ def _row_to_ref(row) -> ProductRef:
         isin=row["isin"],
         product_id=row["product_id"],
         vwd_id=row["vwd_id"],
+        vwd_identifier_type=row["vwd_identifier_type"],
         symbol=row["symbol"],
         name=row["name"],
         currency=row["currency"],
@@ -198,13 +200,15 @@ def _cache_put_product(ref: ProductRef) -> None:
     db.execute(
         """
         INSERT INTO degiro_products(
-            query_norm, isin, product_id, vwd_id, symbol, name,
-            currency, exchange_id, history_ok, metadata_ok, fetched_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            query_norm, isin, product_id, vwd_id, vwd_identifier_type,
+            symbol, name, currency, exchange_id, history_ok, metadata_ok,
+            fetched_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(query_norm) DO UPDATE SET
             isin = excluded.isin,
             product_id = excluded.product_id,
             vwd_id = excluded.vwd_id,
+            vwd_identifier_type = excluded.vwd_identifier_type,
             symbol = excluded.symbol,
             name = excluded.name,
             currency = excluded.currency,
@@ -218,6 +222,7 @@ def _cache_put_product(ref: ProductRef) -> None:
             ref.isin,
             ref.product_id,
             ref.vwd_id,
+            ref.vwd_identifier_type,
             ref.symbol,
             ref.name,
             ref.currency,
@@ -256,18 +261,27 @@ def _pick_best(
     return (with_vwd or filtered)[0]
 
 
-def _validate_history(client: DegiroClient, vwd_id: str) -> bool:
+def _validate_history(
+    client: DegiroClient, vwd_id: str, vwd_identifier_type: str | None
+) -> bool:
     try:
-        candles = client.price_history(vwd_id, period="P1M", resolution="P1D")
+        candles = client.price_history(
+            vwd_id,
+            period="P1M",
+            resolution="P1D",
+            vwd_identifier_type=vwd_identifier_type,
+        )
         return len(candles) >= 5
     except Exception as exc:
         logger.debug("price_history validation failed for %s: %s", vwd_id, exc)
         return False
 
 
-def _validate_metadata(client: DegiroClient, vwd_id: str) -> bool:
+def _validate_metadata(
+    client: DegiroClient, vwd_id: str, vwd_identifier_type: str | None
+) -> bool:
     try:
-        meta = client.price_metadata(vwd_id)
+        meta = client.price_metadata(vwd_id, vwd_identifier_type)
         return bool(meta)
     except Exception as exc:
         logger.debug("price_metadata validation failed for %s: %s", vwd_id, exc)
@@ -313,14 +327,20 @@ def resolve_product(
         )
 
     vwd_id = best.vwd_id
-    history_ok = bool(vwd_id) and _validate_history(client, vwd_id)
-    metadata_ok = bool(vwd_id) and _validate_metadata(client, vwd_id)
+    vwd_identifier_type = best.vwd_identifier_type
+    history_ok = bool(vwd_id) and _validate_history(
+        client, vwd_id, vwd_identifier_type
+    )
+    metadata_ok = bool(vwd_id) and _validate_metadata(
+        client, vwd_id, vwd_identifier_type
+    )
 
     ref = ProductRef(
         query_norm=query_norm,
         isin=best.isin,
         product_id=best.id,
         vwd_id=vwd_id,
+        vwd_identifier_type=vwd_identifier_type,
         symbol=best.symbol,
         name=best.name,
         currency=best.currency,
@@ -411,12 +431,18 @@ def load_candles(
     window: str,
     *,
     refresh: bool = True,
+    vwd_identifier_type: str | None = None,
 ) -> list[CandleRow]:
     """Fetch candles (or return cached), persist to SQLite, return close-only rows."""
     period, resolution = window_to_period_resolution(window)
     if refresh and not _candles_are_fresh(vwd_id, resolution):
         client = get_client()
-        candles = client.price_history(vwd_id, period=period, resolution=resolution)
+        candles = client.price_history(
+            vwd_id,
+            period=period,
+            resolution=resolution,
+            vwd_identifier_type=vwd_identifier_type,
+        )
         _persist_candles(vwd_id, resolution, candles)
 
     rows = fetchall(

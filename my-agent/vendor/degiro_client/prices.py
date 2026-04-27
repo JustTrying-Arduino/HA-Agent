@@ -50,15 +50,17 @@ def _fetch(
     *,
     resolution: str,
     period: str,
+    vwd_identifier_type: str = "issueid",
 ) -> dict[str, Any]:
     token = _user_token(session)
+    prefix = vwd_identifier_type or "issueid"
     params: list[tuple[str, Any]] = [
         ("requestid", 1),
         ("resolution", resolution),
         ("culture", "fr-FR"),
         ("period", period),
-        ("series", f"issueid:{vwd_id}"),
-        ("series", f"price:issueid:{vwd_id}"),
+        ("series", f"{prefix}:{vwd_id}"),
+        ("series", f"price:{prefix}:{vwd_id}"),
         ("format", "json"),
         ("userToken", token),
         ("tz", "Europe/Paris"),
@@ -123,9 +125,23 @@ def _iso_duration_to_timedelta(dur: str) -> timedelta:
     )
 
 
-def price_now(http: DegiroHTTP, session: SessionManager, vwd_id: str) -> Quote:
-    payload = _fetch(http, session, vwd_id, resolution="PT1M", period="P1D")
-    meta = _find_series(payload, "issueid:")
+def price_now(
+    http: DegiroHTTP,
+    session: SessionManager,
+    vwd_id: str,
+    *,
+    vwd_identifier_type: str = "issueid",
+) -> Quote:
+    prefix = vwd_identifier_type or "issueid"
+    payload = _fetch(
+        http,
+        session,
+        vwd_id,
+        resolution="PT1M",
+        period="P1D",
+        vwd_identifier_type=prefix,
+    )
+    meta = _find_series(payload, f"{prefix}:")
     if not meta or "data" not in meta:
         raise RuntimeError(f"no metadata series for vwdId={vwd_id}: {payload}")
     d = meta["data"]
@@ -144,8 +160,16 @@ def price_history(
     *,
     period: str = "P1Y",
     resolution: str = "P1D",
+    vwd_identifier_type: str = "issueid",
 ) -> list[Candle]:
-    payload = _fetch(http, session, vwd_id, resolution=resolution, period=period)
+    payload = _fetch(
+        http,
+        session,
+        vwd_id,
+        resolution=resolution,
+        period=period,
+        vwd_identifier_type=vwd_identifier_type,
+    )
     price_s = _find_series(payload, "price:")
     if not price_s:
         raise RuntimeError(f"no price series in response for vwdId={vwd_id}: {payload}")
@@ -170,9 +194,21 @@ def price_history(
 
 
 def metadata(
-    http: DegiroHTTP, session: SessionManager, vwd_id: str
+    http: DegiroHTTP,
+    session: SessionManager,
+    vwd_id: str,
+    *,
+    vwd_identifier_type: str = "issueid",
 ) -> dict[str, Any]:
     """Rich metadata for a product (trading hours, bid/ask context, 52w range, …)."""
-    payload = _fetch(http, session, vwd_id, resolution="PT1M", period="P1D")
-    meta = _find_series(payload, "issueid:")
+    prefix = vwd_identifier_type or "issueid"
+    payload = _fetch(
+        http,
+        session,
+        vwd_id,
+        resolution="PT1M",
+        period="P1D",
+        vwd_identifier_type=prefix,
+    )
+    meta = _find_series(payload, f"{prefix}:")
     return meta.get("data", {}) if meta else {}

@@ -83,6 +83,7 @@ class Product:
     vwd_id: str | None
     product_type: str | None
     exchange_id: str | None
+    vwd_identifier_type: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 

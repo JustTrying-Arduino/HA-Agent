@@ -81,10 +81,19 @@ class DegiroClient:
     def get_orders(self, *, historical: bool = False) -> list[Order]:
         return orders.get_orders(self._http, self._session, historical=historical)
 
-    def price_now(self, vwd_id: str) -> Quote:
-        return prices.price_now(self._http, self._session, vwd_id)
+    def price_now(
+        self, vwd_id: str, vwd_identifier_type: str | None = None
+    ) -> Quote:
+        return prices.price_now(
+            self._http,
+            self._session,
+            vwd_id,
+            vwd_identifier_type=vwd_identifier_type or "issueid",
+        )
 
-    def price_metadata(self, vwd_id: str) -> dict[str, Any]:
+    def price_metadata(
+        self, vwd_id: str, vwd_identifier_type: str | None = None
+    ) -> dict[str, Any]:
         """Rich product metadata from the vwd charting backend.
 
         Fields observed (not exhaustive, vwd may return more):
@@ -92,8 +101,15 @@ class DegiroClient:
           highPrice, lowPrice, highPriceP1Y, lowPriceP1Y,
           cumulativeVolume, windowHighPrice, windowLowPrice,
           windowOpenPrice, windowPreviousClosePrice.
+
+        EU products use vwd_identifier_type="issueid"; US products use "vwdkey".
         """
-        return prices.metadata(self._http, self._session, vwd_id)
+        return prices.metadata(
+            self._http,
+            self._session,
+            vwd_id,
+            vwd_identifier_type=vwd_identifier_type or "issueid",
+        )
 
     def price_history(
         self,
@@ -101,7 +117,13 @@ class DegiroClient:
         *,
         period: str = "P1Y",
         resolution: str = "P1D",
+        vwd_identifier_type: str | None = None,
     ) -> list[Candle]:
         return prices.price_history(
-            self._http, self._session, vwd_id, period=period, resolution=resolution
+            self._http,
+            self._session,
+            vwd_id,
+            period=period,
+            resolution=resolution,
+            vwd_identifier_type=vwd_identifier_type or "issueid",
         )

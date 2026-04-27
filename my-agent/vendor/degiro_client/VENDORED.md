@@ -29,6 +29,12 @@ l'image se construise sans dependance externe.
 - L'URL charting VWD est appelee avec `tz=Europe/Paris` et renvoie des
   `datetime` naifs. HA-Agent convertit explicitement en UTC avant persistance
   SQLite.
+- Le backend chart distingue deux types d'identifiants via le champ
+  `vwdIdentifierType` du payload produit : `issueid` pour les titres EU,
+  `vwdkey` pour les titres US (et certains ETF). Le parametre `series` de
+  l'URL chart doit utiliser le prefixe correspondant — sinon le backend ne
+  renvoie aucune serie. `price_now`, `price_history` et `price_metadata`
+  acceptent un parametre `vwd_identifier_type` qui par defaut vaut `issueid`.
 
 ## Comment resynchroniser
 

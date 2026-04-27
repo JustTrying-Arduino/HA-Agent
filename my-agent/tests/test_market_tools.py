@@ -104,6 +104,7 @@ class FakeProduct:
     vwd_id: str | None
     product_type: str | None = None
     exchange_id: str | None = None
+    vwd_identifier_type: str | None = "issueid"
 
 
 @dataclass
@@ -137,7 +138,9 @@ class FakeDegiroClient:
     def search_products(self, query, limit=10):
         return [self._product_for(query)]
 
-    def price_history(self, vwd_id, *, period="P1Y", resolution="P1D"):
+    def price_history(
+        self, vwd_id, *, period="P1Y", resolution="P1D", vwd_identifier_type=None
+    ):
         closes = self._series.get(vwd_id, [])
         if not closes:
             return []
@@ -148,7 +151,7 @@ class FakeDegiroClient:
             for i, c in enumerate(closes)
         ]
 
-    def price_metadata(self, vwd_id):
+    def price_metadata(self, vwd_id, vwd_identifier_type=None):
         closes = self._series.get(vwd_id, [])
         if not closes:
             return {}

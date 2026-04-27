@@ -20,6 +20,7 @@ def _to_product(raw: dict[str, Any]) -> Product:
         vwd_id=raw.get("vwdId"),
         product_type=raw.get("productType"),
         exchange_id=raw.get("exchangeId"),
+        vwd_identifier_type=raw.get("vwdIdentifierType"),
         raw=raw,
     )
 
@@ -65,6 +66,8 @@ def search(
                 existing = by_id.get(pid)
                 if existing and enriched.vwd_id:
                     existing.vwd_id = enriched.vwd_id
+                    if enriched.vwd_identifier_type:
+                        existing.vwd_identifier_type = enriched.vwd_identifier_type
                     if not existing.isin:
                         existing.isin = enriched.isin
                     if not existing.currency:

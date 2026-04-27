@@ -95,7 +95,9 @@ def _analyze_entry(entry: WatchlistEntry, strategy: str) -> dict:
         return {"entry": entry, "ref": ref, "error": "no usable price history"}
 
     try:
-        rows = degiro.load_candles(ref.vwd_id, "1y-1d")
+        rows = degiro.load_candles(
+            ref.vwd_id, "1y-1d", vwd_identifier_type=ref.vwd_identifier_type
+        )
     except Exception as exc:
         return {"entry": entry, "ref": ref, "error": f"candles fetch failed: {exc}"}
 
@@ -104,7 +106,9 @@ def _analyze_entry(entry: WatchlistEntry, strategy: str) -> dict:
     high_52w: float | None = None
     if ref.metadata_ok:
         try:
-            meta = degiro.get_client().price_metadata(ref.vwd_id)
+            meta = degiro.get_client().price_metadata(
+                ref.vwd_id, ref.vwd_identifier_type
+            )
             high_52w = meta.get("highPriceP1Y")
         except Exception as exc:
             logger.debug("metadata fetch failed for %s: %s", ref.symbol, exc)

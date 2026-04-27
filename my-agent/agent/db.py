@@ -85,6 +85,7 @@ def init_db():
             isin TEXT,
             product_id TEXT,
             vwd_id TEXT,
+            vwd_identifier_type TEXT,
             symbol TEXT,
             name TEXT,
             currency TEXT,
@@ -122,6 +123,20 @@ def init_db():
         logger.info("Migration: added 'model' column to messages table")
     except Exception:
         pass  # Column already exists
+
+    try:
+        db.execute("ALTER TABLE degiro_products ADD COLUMN vwd_identifier_type TEXT")
+        db.commit()
+        # First run with the new column: existing rows were resolved without
+        # vwd_identifier_type and may carry history_ok=0 / metadata_ok=0 for
+        # US securities. Purge so they get re-resolved with the correct prefix.
+        db.execute("DELETE FROM degiro_products")
+        db.commit()
+        logger.info(
+            "Migration: added 'vwd_identifier_type' column and purged degiro_products"
+        )
+    except Exception:
+        pass  # Column already exists, no purge needed
 
     logger.info("Database initialized at %s", cfg.db_path)
 

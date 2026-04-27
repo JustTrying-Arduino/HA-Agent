@@ -67,9 +67,10 @@ Ces indicateurs sont implementes en Python pur dans `agent/indicators.py` (RSI W
 
 1. `search_products(query, limit=20)`.
 2. Filtrage: ISIN exact > `exchange_id` > `currency` > presence de `vwd_id`.
-3. Validation `price_history(vwd_id, period="P1M", resolution="P1D")`: ≥ 5 candles -> `history_ok=True`.
-4. Validation `price_metadata(vwd_id)`: dict non vide -> `metadata_ok=True`.
-5. Persistance `degiro_products`.
+3. Lecture du `vwdIdentifierType` (issueid pour EU, vwdkey pour US/ETF) — sans cette info, le backend chart ne renvoie aucune serie.
+4. Validation `price_history(vwd_id, period="P1M", resolution="P1D", vwd_identifier_type=...)`: ≥ 5 candles -> `history_ok=True`.
+5. Validation `price_metadata(vwd_id, vwd_identifier_type=...)`: dict non vide -> `metadata_ok=True`.
+6. Persistance `degiro_products` (colonne `vwd_identifier_type` incluse).
 
 Les positions sans `vwd_id` ou sans historique sont affichees avec le prix actuel, mais `degiro_indicators` refuse explicitement d'analyser un produit dont `history_ok=False`.
 

@@ -208,7 +208,7 @@ def degiro_quote(query: str) -> str:
         return f"Error: no metadata for {query!r} — product not tradable via charting."
 
     client = degiro.get_client()
-    meta = client.price_metadata(ref.vwd_id)
+    meta = client.price_metadata(ref.vwd_id, ref.vwd_identifier_type)
     last = meta.get("lastPrice")
     prev = meta.get("previousClosePrice")
     currency = meta.get("currency") or ref.currency
@@ -282,7 +282,9 @@ def degiro_candles(
     if not ref.history_ok:
         return f"Error: no usable price history for {query!r}."
 
-    rows = degiro.load_candles(ref.vwd_id, window)
+    rows = degiro.load_candles(
+        ref.vwd_id, window, vwd_identifier_type=ref.vwd_identifier_type
+    )
     if not rows:
         return f"No candles returned for {query!r} on window {window}."
 
@@ -336,13 +338,17 @@ def degiro_indicators(query: str, strategy: str) -> str:
             "indicators require a valid close series."
         )
 
-    rows = degiro.load_candles(ref.vwd_id, "1y-1d")
+    rows = degiro.load_candles(
+        ref.vwd_id, "1y-1d", vwd_identifier_type=ref.vwd_identifier_type
+    )
     closes = [r.close for r in rows]
 
     high_52w: float | None = None
     if ref.metadata_ok:
         try:
-            meta = degiro.get_client().price_metadata(ref.vwd_id)
+            meta = degiro.get_client().price_metadata(
+                ref.vwd_id, ref.vwd_identifier_type
+            )
             high_52w = meta.get("highPriceP1Y")
         except Exception as exc:
             logger.debug("metadata fetch failed during indicators: %s", exc)
