@@ -54,6 +54,16 @@ Le backend ne tente pas de "réparer" un HTML libre ou arbitraire. Il applique l
 
 Les messages audio sont transcrits avant passage dans la boucle agent. La transcription repose sur `audio.py`, qui est une utilité interne et non un tool exposé au LLM.
 
+## Résilience réseau
+
+L'API Telegram est joignable via Internet et peut subir des micro-coupures (DNS, TCP). Le bot applique trois garde-fous:
+
+- des timeouts explicites côté `Application` (connect 10 s, read/write 30 s, pool 10 s, plus des timeouts dédiés au long-polling `getUpdates`);
+- un retry court (jusqu'à 2 tentatives, 0,5 s puis 1 s) sur `telegram.error.TimedOut` et `telegram.error.NetworkError` pour chaque envoi/édition: placeholder initial, mises à jour de progression et réponse finale;
+- un handler d'erreur applicatif qui journalise toute exception non gérée plutôt que de laisser PTB afficher une stacktrace orpheline.
+
+Si même après retries le placeholder initial ne part pas, le message utilisateur est abandonné proprement (log `ERROR` avec `chat_id`) et le bot reste disponible pour les messages suivants.
+
 ## Contraintes à préserver
 
 - Mode de connexion: polling uniquement.

@@ -1,5 +1,6 @@
 """Telegram bot: polling, message dispatch (text + audio)."""
 
+import asyncio
 from html import unescape
 import os
 import tempfile
@@ -8,6 +9,7 @@ import re
 
 from telegram import Update
 from telegram.constants import ParseMode
+from telegram.error import NetworkError, TimedOut
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
 from agent.config import cfg
@@ -54,10 +56,29 @@ TOOL_STATUS_LABELS = {
 }
 
 
+TRANSIENT_NETWORK_ERRORS = (TimedOut, NetworkError)
+TRANSIENT_RETRY_DELAYS = (0.5, 1.0)
+
+
+async def _on_telegram_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error("Unhandled Telegram error: %s", context.error, exc_info=context.error)
+
+
 def start_bot() -> Application:
     """Create and return the Telegram Application (do NOT call run_polling)."""
-    app = Application.builder().token(cfg.telegram_bot_token).build()
+    app = (
+        Application.builder()
+        .token(cfg.telegram_bot_token)
+        .connect_timeout(10.0)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .pool_timeout(10.0)
+        .get_updates_connect_timeout(10.0)
+        .get_updates_read_timeout(40.0)
+        .build()
+    )
     app.add_handler(MessageHandler(filters.TEXT | filters.VOICE | filters.AUDIO, handle_message))
+    app.add_error_handler(_on_telegram_error)
     return app
 
 
@@ -72,7 +93,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not (update.message.text or update.message.voice or update.message.audio):
         return
 
-    status_message = await update.message.reply_text(INITIAL_STATUS_TEXT)
+    try:
+        status_message = await _call_with_transient_retry(
+            lambda: update.message.reply_text(INITIAL_STATUS_TEXT),
+            "Failed to send Telegram status placeholder",
+        )
+    except Exception:
+        logger.exception(
+            "Giving up on chat_id=%s: could not send status placeholder",
+            chat_id,
+        )
+        return
     progress_callback, progress_state = _build_progress_callback(status_message)
 
     # Extract text (or transcribe audio)
@@ -209,15 +240,48 @@ def build_telegram_chunks(text: str) -> list[dict[str, str | None]]:
     return chunks
 
 
+async def _call_with_transient_retry(action, action_label: str):
+    """Run the awaitable factory `action`, retrying on transient Telegram network errors."""
+    last_exc: BaseException | None = None
+    total_retries = len(TRANSIENT_RETRY_DELAYS)
+    for attempt in range(total_retries + 1):
+        try:
+            return await action()
+        except TRANSIENT_NETWORK_ERRORS as exc:
+            last_exc = exc
+            if attempt >= total_retries:
+                break
+            delay = TRANSIENT_RETRY_DELAYS[attempt]
+            logger.warning(
+                "%s: transient network error (%s), retrying in %.1fs (attempt %d/%d)",
+                action_label,
+                exc.__class__.__name__,
+                delay,
+                attempt + 1,
+                total_retries,
+            )
+            await asyncio.sleep(delay)
+    assert last_exc is not None
+    raise last_exc
+
+
 async def _run_telegram_request(send_func, text: str, parse_mode: str | None, action_label: str) -> tuple[str, str | None]:
     try:
-        await send_func(text=text, parse_mode=parse_mode)
+        await _call_with_transient_retry(
+            lambda: send_func(text=text, parse_mode=parse_mode),
+            action_label,
+        )
         return text, parse_mode
+    except TRANSIENT_NETWORK_ERRORS:
+        raise
     except Exception:
         if parse_mode == ParseMode.HTML:
             logger.warning("%s failed with HTML, retrying as plain text", action_label, exc_info=True)
             fallback_text = _strip_supported_html(text)
-            await send_func(text=fallback_text, parse_mode=None)
+            await _call_with_transient_retry(
+                lambda: send_func(text=fallback_text, parse_mode=None),
+                action_label,
+            )
             return fallback_text, None
         raise
 
