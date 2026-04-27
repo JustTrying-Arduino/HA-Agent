@@ -86,7 +86,8 @@ class HAClient:
 
     async def call_service(self, domain: str, service: str, data: dict) -> list[dict] | dict | str:
         session = await self._get_session()
-        logger.debug("Calling Home Assistant service %s.%s with payload=%s", domain, service, data)
+        logger.info("HA service call: %s.%s entity=%s", domain, service, data.get("entity_id"))
+        logger.debug("HA service call payload=%s", data)
         async with session.post(f"services/{domain}/{service}", json=data) as resp:
             return await self._read_json_response(resp, entity_id=data.get("entity_id"))
 

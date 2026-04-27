@@ -65,6 +65,9 @@ async def _run_agent_inner(
     # Model routing
     current_model = cfg.openai_model_light
     escalated = False
+    n_tool_calls = 0
+
+    logger.info("Agent run start chat_id=%s model=%s", chat_id, current_model)
 
     # Per-model token accumulators: {model: [input, output, cached]}
     token_accum: dict[str, list[int]] = {}
@@ -83,7 +86,7 @@ async def _run_agent_inner(
 
     start_time = time.time()
 
-    _log_llm_request(current_model, messages, _build_tool_kwargs().get("tools"))
+    _log_llm_request(chat_id, current_model, messages, _build_tool_kwargs().get("tools"))
 
     # First LLM call
     response = await client.chat.completions.create(
@@ -91,7 +94,7 @@ async def _run_agent_inner(
         messages=messages,
         **_build_tool_kwargs(),
     )
-    _log_llm_response(response)
+    _log_llm_response(chat_id, response)
     _add_tokens(current_model, response.usage.prompt_tokens,
                 response.usage.completion_tokens, _get_cached_tokens(response))
 
@@ -111,7 +114,11 @@ async def _run_agent_inner(
             except json.JSONDecodeError:
                 arguments = {}
 
-            logger.info("Tool call: %s(%s)", tool_name, _truncate(str(arguments), 200))
+            n_tool_calls += 1
+            logger.info(
+                "Tool call chat_id=%s %s(%s)",
+                chat_id, tool_name, _truncate(str(arguments), 200),
+            )
             await _notify_progress(progress_callback, "tool_start", tool_name=tool_name)
 
             t0 = time.time()
@@ -120,8 +127,8 @@ async def _run_agent_inner(
             success = not result.startswith("Error")
 
             logger.info(
-                "Tool result: %s -> %s [%dms]",
-                tool_name, _truncate(result, 200), duration_ms,
+                "Tool result chat_id=%s %s -> %s [%dms]",
+                chat_id, tool_name, _truncate(result, 200), duration_ms,
             )
 
             log_tool_call(
@@ -154,13 +161,13 @@ async def _run_agent_inner(
             )
 
         # Next LLM call (with updated model and tools)
-        _log_llm_request(current_model, messages, _build_tool_kwargs().get("tools"))
+        _log_llm_request(chat_id, current_model, messages, _build_tool_kwargs().get("tools"))
         response = await client.chat.completions.create(
             model=current_model,
             messages=messages,
             **_build_tool_kwargs(),
         )
-        _log_llm_response(response)
+        _log_llm_response(chat_id, response)
         _add_tokens(current_model, response.usage.prompt_tokens,
                     response.usage.completion_tokens, _get_cached_tokens(response))
 
@@ -174,6 +181,12 @@ async def _run_agent_inner(
 
     # Save assistant message with model info
     save_message(chat_id, "assistant", final_text, model=current_model)
+
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    logger.info(
+        "Agent run end chat_id=%s duration=%dms tool_calls=%d escalated=%s",
+        chat_id, elapsed_ms, n_tool_calls, escalated,
+    )
 
     return final_text
 
@@ -211,74 +224,65 @@ async def _notify_progress(
         logger.exception("Progress callback failed for event=%s", event)
 
 
-def _message_field(message, field: str, default=None):
+def _serialize_message(message) -> dict:
     if isinstance(message, dict):
-        return message.get(field, default)
-    return getattr(message, field, default)
+        return message
+    try:
+        return message.model_dump(mode="json")
+    except Exception:
+        return {"role": getattr(message, "role", "?"), "content": str(message)}
 
 
-def _log_llm_request(model: str, messages: list[dict], tools: list[dict] | None) -> None:
+def _log_llm_request(chat_id: int, model: str, messages: list, tools: list[dict] | None) -> None:
     if not logger.isEnabledFor(logging.DEBUG):
         return
 
-    logger.debug("LLM request model=%s tools=%d", model, len(tools or []))
-    for idx, message in enumerate(messages):
-        role = _message_field(message, "role", "?")
-        if role == "system":
-            logger.debug(
-                "LLM request message[%d] role=%s content=\n%s",
-                idx,
-                role,
-                _truncate(str(_message_field(message, "content", "")), DEBUG_TEXT_LIMIT),
-            )
-            continue
+    logger.debug(
+        "LLM request chat_id=%s model=%s n_messages=%d n_tools=%d",
+        chat_id, model, len(messages), len(tools or []),
+    )
 
-        if role == "tool":
-            logger.debug(
-                "LLM request message[%d] role=%s tool_call_id=%s content=%s",
-                idx,
-                role,
-                _message_field(message, "tool_call_id", "-"),
-                _truncate(str(_message_field(message, "content", "")), DEBUG_TEXT_LIMIT),
-            )
-            continue
-
+    try:
+        payload = {
+            "messages": [_serialize_message(m) for m in messages],
+            "tools": tools or [],
+        }
         logger.debug(
-            "LLM request message[%d] role=%s content=%s",
-            idx,
-            role,
-            _truncate(str(_message_field(message, "content", "")), DEBUG_TEXT_LIMIT),
+            "LLM request payload chat_id=%s %s",
+            chat_id,
+            _truncate(json.dumps(payload, ensure_ascii=True), DEBUG_TEXT_LIMIT),
         )
+    except Exception:
+        logger.debug("LLM request payload chat_id=%s (serialization failed)", chat_id)
 
-    if tools:
-        logger.debug("LLM request tools schema=%s", _truncate(json.dumps(tools, ensure_ascii=True), DEBUG_TEXT_LIMIT))
 
-
-def _log_llm_response(response) -> None:
+def _log_llm_response(chat_id: int, response) -> None:
     if not logger.isEnabledFor(logging.DEBUG):
         return
+
+    finish_reason = "?"
+    content_len = 0
+    n_tool_calls = 0
+    try:
+        choice = response.choices[0]
+        finish_reason = getattr(choice, "finish_reason", "?") or "?"
+        message = choice.message
+        content_len = len(getattr(message, "content", None) or "")
+        n_tool_calls = len(getattr(message, "tool_calls", None) or [])
+    except Exception:
+        pass
+
+    logger.debug(
+        "LLM response chat_id=%s finish_reason=%s content_len=%d n_tool_calls=%d",
+        chat_id, finish_reason, content_len, n_tool_calls,
+    )
 
     try:
         payload = response.model_dump(mode="json")
+        logger.debug(
+            "LLM response payload chat_id=%s %s",
+            chat_id,
+            _truncate(json.dumps(payload, ensure_ascii=True), DEBUG_TEXT_LIMIT),
+        )
     except Exception:
-        logger.debug("LLM raw response dump unavailable")
-        payload = None
-
-    if payload is not None:
-        logger.debug("LLM raw response=%s", _truncate(json.dumps(payload, ensure_ascii=True), DEBUG_TEXT_LIMIT))
-
-    try:
-        message = response.choices[0].message
-    except Exception:
-        return
-
-    if getattr(message, "content", None):
-        logger.debug("LLM response content=%s", _truncate(message.content, DEBUG_TEXT_LIMIT))
-
-    tool_calls = getattr(message, "tool_calls", None) or []
-    if tool_calls:
-        try:
-            tc_dump = [tc.model_dump(mode="json") for tc in tool_calls]
-            logger.debug("LLM response tool_calls=%s", _truncate(json.dumps(tc_dump, ensure_ascii=True), DEBUG_TEXT_LIMIT))
-        except Exception:
-            logger.debug("LLM response included %d tool call(s)", len(tool_calls))
+        logger.debug("LLM response payload chat_id=%s (serialization failed)", chat_id)

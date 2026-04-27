@@ -22,7 +22,7 @@ class LoopLoggingTests(unittest.TestCase):
         ]
 
         with patch("agent.loop.logger.isEnabledFor", return_value=True), patch("agent.loop.logger.debug"):
-            _log_llm_request("gpt-4.1-mini", messages, tools=[])
+            _log_llm_request(42, "gpt-4.1-mini", messages, tools=[])
 
 
 if __name__ == "__main__":

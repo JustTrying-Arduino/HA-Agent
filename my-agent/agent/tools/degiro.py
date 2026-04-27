@@ -351,7 +351,7 @@ def degiro_indicators(query: str, strategy: str) -> str:
             )
             high_52w = meta.get("highPriceP1Y")
         except Exception as exc:
-            logger.debug("metadata fetch failed during indicators: %s", exc)
+            logger.warning("metadata fetch failed during indicators: %s", exc)
 
     verdict = indicators.evaluate(strategy, closes, high_52w=high_52w)
 

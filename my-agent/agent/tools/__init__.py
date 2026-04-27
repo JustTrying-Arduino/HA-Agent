@@ -23,7 +23,6 @@ def register(name: str, description: str, parameters: dict):
                 },
             },
         }
-        logger.debug("Registered tool: %s", name)
         return func
     return decorator
 

@@ -150,7 +150,7 @@ def _analyze_entry(entry: WatchlistEntry, strategy: str) -> dict:
             )
             high_52w = meta.get("highPriceP1Y")
         except Exception as exc:
-            logger.debug("metadata fetch failed for %s: %s", ref.symbol, exc)
+            logger.warning("metadata fetch failed for %s: %s", ref.symbol, exc)
 
     verdict = indicators.evaluate(strategy, closes, high_52w=high_52w)
     return {"entry": entry, "ref": ref, "verdict": verdict}

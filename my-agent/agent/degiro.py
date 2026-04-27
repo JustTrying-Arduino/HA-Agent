@@ -273,7 +273,7 @@ def _validate_history(
         )
         return len(candles) >= 5
     except Exception as exc:
-        logger.debug("price_history validation failed for %s: %s", vwd_id, exc)
+        logger.warning("price_history validation failed for %s: %s", vwd_id, exc)
         return False
 
 
@@ -284,7 +284,7 @@ def _validate_metadata(
         meta = client.price_metadata(vwd_id, vwd_identifier_type)
         return bool(meta)
     except Exception as exc:
-        logger.debug("price_metadata validation failed for %s: %s", vwd_id, exc)
+        logger.warning("price_metadata validation failed for %s: %s", vwd_id, exc)
         return False
 
 
