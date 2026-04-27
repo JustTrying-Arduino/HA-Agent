@@ -6,8 +6,10 @@ from agent.tools import register
 @register(
     name="escalate_model",
     description=(
-        "Escalate to the stronger model for this turn. Use before any "
-        "web search/browsing or tasks likely to need 2+ tool calls. "
+        "Escalate to the stronger model for this turn. Use for complex "
+        "reasoning, synthesis, or planning that the lighter model "
+        "struggles with. For web research, prefer web_research, which "
+        "delegates to a sub-agent and keeps the main context clean. "
         "No parameters."
     ),
     parameters={
