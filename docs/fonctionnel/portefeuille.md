@@ -46,7 +46,7 @@ Tous lecture seule, exposes uniquement si les credentials sont configures.
 - `price_history()` renvoie **uniquement `close` et `timestamp`**. Aucun `open`, `high`, `low`, `volume`.
 - Consequence: pas de confirmations "volume au retournement" ou "volume sur breakout" cote tool.
 - Les indicateurs (`agent/indicators.py`) sont tous close-only: RSI(14) Wilder, SMA(N), slope, breakout 20j, support/resistance par clustering de closes, drawdown via `highPriceP1Y` de metadata.
-- Pour un breakout douteux: croiser avec `web_search` / `web_fetch`.
+- Pour un breakout douteux: croiser avec `web_research` (sub-agent dedie, contexte isole).
 
 ## Portefeuille tolerant
 

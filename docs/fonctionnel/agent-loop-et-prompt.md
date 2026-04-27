@@ -42,6 +42,10 @@ Pendant la boucle tool_use, des messages s'ajoutent dynamiquement au tableau env
 
 Ces messages ne sont pas persistés en base ; ils n'existent que le temps du run courant.
 
+## Sub-agents
+
+Certains tools encapsulent une boucle LLM imbriquée (un « sub-agent ») qui ne partage pas le contexte de l'agent principal. C'est aujourd'hui le cas de `web_research`, qui spawn un sub-agent par question, en parallèle. Voir [sub-agents.md](sub-agents.md) pour le détail. Côté agent principal, un sub-agent se comporte comme un tool synchrone qui attend la fin de toutes les sous-tâches avant de retourner une synthèse consolidée.
+
 ## Index des skills
 
 Le prompt n'embarque pas le contenu complet des skills. Il injecte une section `Skills Index` qui liste chaque skill avec:

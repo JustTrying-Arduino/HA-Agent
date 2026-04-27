@@ -49,6 +49,7 @@ def main():
     else:
         # Still register web_fetch even without Brave key
         import agent.tools.web  # noqa: F401
+    import agent.tools.research  # noqa: F401
     if cfg.supervisor_token:
         import agent.tools.homeassistant  # noqa: F401
 

@@ -76,11 +76,7 @@ Les positions sans `vwd_id` ou sans historique sont affichees avec le prix actue
 
 ## Why via web
 
-Une fois les 1 a 3 candidats retenus:
-
-1. `web_search` sur le nom / ticker.
-2. `web_fetch` sur l'article le plus credible.
-3. Distinguer baisse technique, news sectorielle, deterioration fondamentale.
+Une fois les 1 a 3 candidats retenus, `web_research` avec une tache par titre (le sub-agent fait son propre `web_search` + `web_fetch` en interne, en parallele des autres titres). Distinguer baisse technique, news sectorielle, deterioration fondamentale.
 
 ## Workflow recap par defaut
 
@@ -89,7 +85,7 @@ Le workflow nominal de la skill `market-watch` est le **recap quotidien dual-str
 1. `market_watch(strategy="rebound", group="core_daily")` puis `market_watch(strategy="swing", group="core_daily")`. Le cache `degiro_prices` (TTL daily 8 h) rend le 2e appel quasi gratuit.
 2. Construction d'une shortlist (max 5 noms): confluents > top rebond > top swing.
 3. Zoom `degiro_indicators` par nom retenu sur la strategie dominante.
-4. `web_search` + `web_fetch` sur **2 noms maximum** pour le contexte fondamental.
+4. `web_research` sur **2 a 4 noms maximum** (une tache par titre, sub-agents paralleles) pour le contexte fondamental.
 5. Sortie Telegram courte (< 1500 caracteres) avec recommandation par nom et rappel close-only.
 
 Les workflows secondaires (mono-strategie, zoom mono-titre) restent disponibles. Detail dans `skills/market-watch/SKILL.md`.

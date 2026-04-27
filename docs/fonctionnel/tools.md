@@ -26,6 +26,7 @@ Règles à préserver:
 - shell: exécution de commandes système;
 - fichiers: lecture, écriture, édition simple, listing;
 - web: recherche et récupération de contenu;
+- recherche déléguée: `web_research` — lance des sub-agents de recherche en parallèle (boucle isolée web_search/web_fetch/read_file), retourne une synthèse consolidée;
 - market: `market_watch` — screener par stratégie (rebound / swing) sur une watchlist, alimenté par Degiro (close-only);
 - degiro: `degiro_portfolio`, `degiro_search`, `degiro_quote`, `degiro_candles`, `degiro_indicators` — lecture seule, aucune capacité de passer un ordre (méthodes `place_order`, `check_order`, `confirm_order`, `cancel_order` physiquement retirées du client vendored);
 - home assistant: recherche d'entités exposées, lecture d'état et appel de services via Supervisor;
@@ -48,6 +49,7 @@ Règles à préserver:
 - sortie shell tronquée à 10 000 caractères;
 - lecture de fichier tronquée à 50 000 caractères;
 - récupération web tronquée à 20 000 caractères.
+- `web_research`: jusqu'à 5 sous-tâches par appel, max 3 sub-agents concurrents (semaphore), timeout 180 s par sub-agent. Voir `sub-agents.md`.
 - cache de résolution du label Home Assistant: 60 secondes.
 - veille boursière: indicateurs close-only (Degiro ne fournit ni volume ni OHL). Les confirmations volume ne sont pas disponibles — croiser avec `web_search` / `web_fetch` si nécessaire.
 - famille `degiro_*`: lecture seule. Les méthodes de passage d'ordre ne sont pas importables (retirées du client vendored). Le portefeuille peut être lu, les analyses techniques proposées, mais aucun ordre ne peut être déclenché par l'agent.

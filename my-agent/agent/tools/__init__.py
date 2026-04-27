@@ -27,7 +27,12 @@ def register(name: str, description: str, parameters: dict):
     return decorator
 
 
-def get_tool_schemas(exclude: set[str] | None = None) -> list[dict]:
+def get_tool_schemas(
+    exclude: set[str] | None = None,
+    include: set[str] | None = None,
+) -> list[dict]:
+    if include is not None:
+        return [t["schema"] for name, t in TOOLS.items() if name in include]
     exc = exclude or set()
     return [t["schema"] for name, t in TOOLS.items() if name not in exc]
 

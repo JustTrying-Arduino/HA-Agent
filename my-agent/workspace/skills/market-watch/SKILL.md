@@ -16,7 +16,7 @@ Veille boursiere sur la watchlist Degiro (close-only). Workflow par defaut: reca
    b. top rebond par score decroissant,
    c. top swing par score decroissant.
 4. Pour chaque nom shortliste: `degiro_indicators(query=ISIN, strategy=...)` sur la strategie dominante. Recuperer RSI, drawdown, SMA50, SMA200, ecart au support, score.
-5. Why web sur **2 noms maximum**: `web_search "<label> news"` puis `web_fetch` sur la source la plus credible (Reuters, Bloomberg, FT, WSJ, Les Echos, Boursorama, site corporate). 1 ligne pour distinguer baisse technique / news / deterioration fondamentale.
+5. Why web sur **4 noms maximum**: appeler `web_research` en un seul tool_call avec une tache par titre (`question="news recentes affectant <label> (-X%)?"`, `hint="ticker=<ISIN>, var=-X% sur <date>"`). Les sub-agents tournent en parallele, sources prioritaires Reuters, Bloomberg, FT, WSJ, Les Echos, Boursorama, site corporate. Conserver 1 ligne par titre pour distinguer baisse technique / news / deterioration fondamentale.
 6. Sortir au format Telegram (cf. Output).
 
 ## Workflows secondaires
@@ -60,14 +60,14 @@ Note close-only.
 Cas vide: "Rien a signaler aujourd'hui sur core_daily" + eventuels rejets / falling knives.
 
 ## Garde-fous
-- Maximum **2** appels `web_search` par recap.
+- Maximum **4** taches dans le batch `web_research` par recap (une par titre).
 - Si `market_watch` echoue (Degiro offline, credentials, etc.): message court explicite, ne rien inventer.
 
 ## Limitations close-only
 Degiro ne fournit ni volume ni OHL. Pas de confirmation volume sur breakout / retournement. Toujours signaler quand l'analyse touche au volume.
 
 ## Tools utilises
-`market_watch`, `degiro_indicators`, `degiro_candles`, `degiro_quote`, `degiro_search`, `web_search`, `web_fetch`.
+`market_watch`, `degiro_indicators`, `degiro_candles`, `degiro_quote`, `degiro_search`, `web_research`.
 
 ## Watchlist
 Fichier: `skills/market-watch/watchlist.json`. Format ISIN-first: `{ "isin": "...", "label": "...", "currency": "EUR", "exchange_id": "..." (optionnel) }`. Ajouter `exchange_id` / `currency` en cas d'ambiguite (ADR, listings multiples). Lire le fichier pour la liste a jour des groupes (`core_daily`, ...).
