@@ -43,10 +43,47 @@ def _load_watchlist() -> dict:
     return json.loads(path.read_text())
 
 
+def _available_groups() -> list[str]:
+    """Best-effort list of valid `group` values for the tool schema.
+
+    Read at import time, so changes to watchlist.json require a restart. If the
+    file is unreachable we return an empty list and skip the enum constraint.
+    """
+    try:
+        config = _load_watchlist()
+    except Exception:
+        return []
+    groups = list(config.get("groups", {}).keys())
+    return sorted({*groups, "all"})
+
+
+def _default_group_name() -> str:
+    try:
+        config = _load_watchlist()
+    except Exception:
+        return DEFAULT_GROUP
+    return config.get("default_group") or DEFAULT_GROUP
+
+
+def _build_group_schema() -> dict:
+    schema: dict = {
+        "type": "string",
+        "description": (
+            f"Watchlist group name. Omit to use the default group "
+            f"('{_default_group_name()}'); pass 'all' to scan every group."
+        ),
+    }
+    enum = _available_groups()
+    if enum:
+        schema["enum"] = enum
+    return schema
+
+
 def _resolve_group(group: str | None) -> tuple[str, list[WatchlistEntry]]:
     config = _load_watchlist()
     groups = config.get("groups", {})
-    target = group or config.get("default_group") or DEFAULT_GROUP
+    default_name = config.get("default_group") or DEFAULT_GROUP
+    target = group or default_name
     if target == "all":
         raw: list[dict] = []
         seen: set[str] = set()
@@ -62,7 +99,9 @@ def _resolve_group(group: str | None) -> tuple[str, list[WatchlistEntry]]:
         if not raw:
             available = ", ".join(sorted(groups.keys())) or "(none)"
             raise ValueError(
-                f"Unknown or empty watchlist group '{target}'. Available: {available}"
+                f"Unknown or empty watchlist group '{target}'. "
+                f"Available: {available}, or 'all' to scan everything. "
+                f"Omit the parameter to use the default group ('{default_name}')."
             )
 
     entries = []
@@ -148,10 +187,7 @@ def _render_verdict(item: dict) -> str:
                 "enum": ["rebound", "swing"],
                 "description": "Screening strategy.",
             },
-            "group": {
-                "type": "string",
-                "description": "Watchlist group name. Default: value of default_group.",
-            },
+            "group": _build_group_schema(),
             "max_candidates": {
                 "type": "integer",
                 "description": f"Max candidates to list. Default {DEFAULT_MAX_CANDIDATES}.",
