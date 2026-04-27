@@ -82,6 +82,18 @@ Une fois les 1 a 3 candidats retenus:
 2. `web_fetch` sur l'article le plus credible.
 3. Distinguer baisse technique, news sectorielle, deterioration fondamentale.
 
+## Workflow recap par defaut
+
+Le workflow nominal de la skill `market-watch` est le **recap quotidien dual-strategie** sur `core_daily`:
+
+1. `market_watch(strategy="rebound", group="core_daily")` puis `market_watch(strategy="swing", group="core_daily")`. Le cache `degiro_prices` (TTL daily 8 h) rend le 2e appel quasi gratuit.
+2. Construction d'une shortlist (max 5 noms): confluents > top rebond > top swing.
+3. Zoom `degiro_indicators` par nom retenu sur la strategie dominante.
+4. `web_search` + `web_fetch` sur **2 noms maximum** pour le contexte fondamental.
+5. Sortie Telegram courte (< 1500 caracteres) avec recommandation par nom et rappel close-only.
+
+Les workflows secondaires (mono-strategie, zoom mono-titre) restent disponibles. Detail dans `skills/market-watch/SKILL.md`.
+
 ## Points d'attention
 
 - Toute evolution de la famille `degiro_*` ou de `market_watch` doit aussi mettre a jour `tools.md`, `portefeuille.md`, et les skills `market-watch` / `portfolio-advisor`.
