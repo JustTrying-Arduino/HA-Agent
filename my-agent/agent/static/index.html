@@ -115,6 +115,9 @@
   .status-pill.archived { background: rgba(255, 159, 10, 0.15); color: var(--orange); }
   .status-pill.cancelled { background: rgba(255, 69, 58, 0.15); color: var(--red); }
 
+  .agent-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-size: 0.7em; font-weight: 600; vertical-align: middle; }
+  .agent-badge.subagent { background: rgba(10, 132, 255, 0.15); color: var(--accent); }
+
   #section-stats, #section-messages, #section-tools, #section-reminders { display: none; }
   #section-stats.active, #section-messages.active, #section-tools.active, #section-reminders.active { display: block; }
 </style>
@@ -485,10 +488,11 @@ async function loadToolCalls() {
   toolCalls.forEach(tc => {
     const time = new Date(tc.timestamp).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const status = tc.success ? '<span class="success">✓</span>' : '<span class="failure">✗</span>';
+    const badge = tc.agent_source === "subagent" ? ' <span class="agent-badge subagent">sub</span>' : "";
     html += `<tr>
       <td>${time}</td>
       <td>${tc.chat_id}</td>
-      <td>${tc.tool_name}</td>
+      <td>${escapeHtml(tc.tool_name)}${badge}</td>
       <td class="table-text">${renderExpandableCell(tc.input_summary || "", { previewChars: 60 })}</td>
       <td>${status}</td>
       <td>${tc.duration_ms}ms</td>

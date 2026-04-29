@@ -139,6 +139,7 @@ async def _run_agent_inner(
                 output_summary=result,
                 success=success,
                 duration_ms=duration_ms,
+                agent_source="main",
             )
 
             # Detect escalation

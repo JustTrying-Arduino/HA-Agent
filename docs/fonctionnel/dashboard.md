@@ -57,8 +57,8 @@ Les tool calls exécutés dans la même minute qu'un message assistant sont affi
 **Colonnes de la table:**
 - heure (`dd/mm HH:MM`);
 - Chat ID;
-- nom du tool;
-- input (tronqué, extensible au clic);
+- nom du tool, suivi d'un badge `sub` quand l'appel provient d'un sub-agent (`agent_source = 'subagent'`);
+- input (tronqué, extensible au clic ; jusqu'à 2000 caractères stockés en BD);
 - statut (✓ succès / ✗ échec);
 - durée en ms.
 

@@ -7,7 +7,7 @@ import time
 from openai import AsyncOpenAI
 
 from agent.config import cfg
-from agent.memory import log_token_usage
+from agent.memory import log_token_usage, log_tool_call
 from agent.tools import execute_tool, get_tool_schemas
 
 logger = logging.getLogger(__name__)
@@ -102,6 +102,17 @@ async def run_research_subagent(
                 tool_name,
                 duration_ms,
             )
+            if parent_chat_id is not None:
+                log_tool_call(
+                    chat_id=parent_chat_id,
+                    message_id=tc.id,
+                    tool_name=tool_name,
+                    input_summary=str(args),
+                    output_summary=result,
+                    success=not result.startswith("Error"),
+                    duration_ms=duration_ms,
+                    agent_source="subagent",
+                )
             messages.append(
                 {
                     "role": "tool",

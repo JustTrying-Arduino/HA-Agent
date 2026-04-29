@@ -50,7 +50,7 @@ En cas d'échec d'un sub-agent : `[ERREUR] <message>` à la place de la synthès
 
 Les tokens consommés par chaque sub-agent sont loggés dans la table `token_usage` au nom du `parent_chat_id` avec un model taggé `subagent:<model>` (par exemple `subagent:gpt-4.1-mini`). Cela permet de séparer la conso sub-agent de celle de l'agent principal sans changer le schéma DB.
 
-Les tool calls effectués par le sub-agent (`web_search`, `web_fetch`, `read_file`) passent par le registry standard et sont donc journalisés dans `tool_calls` au nom du `parent_chat_id`.
+Les tool calls effectués par le sub-agent (`web_search`, `web_fetch`, `read_file`) sont journalisés dans `tool_calls` au nom du `parent_chat_id` avec `agent_source = 'subagent'`. Dans l'onglet Tool Calls du dashboard, ils apparaissent avec un badge `sub` à côté du nom du tool. Les tool calls de l'agent principal portent `agent_source = 'main'` et n'affichent pas de badge.
 
 ## Limites et garde-fous
 

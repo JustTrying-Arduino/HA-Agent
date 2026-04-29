@@ -99,12 +99,14 @@ def get_recent_tool_calls(chat_id: int, limit: int = 5) -> list[dict]:
 def log_tool_call(
     chat_id: int, message_id: str, tool_name: str,
     input_summary: str, output_summary: str, success: bool, duration_ms: int,
+    agent_source: str = "main",
 ):
     """Log a tool call."""
     db.execute(
-        "INSERT INTO tool_calls (timestamp, chat_id, message_id, tool_name, input_summary, output_summary, success, duration_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tool_calls (timestamp, chat_id, message_id, tool_name, input_summary, output_summary, success, duration_ms, agent_source) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (_now_iso(), chat_id, message_id, tool_name,
-         input_summary[:500], output_summary[:500], int(success), duration_ms),
+         input_summary[:2000], output_summary[:2000], int(success), duration_ms,
+         agent_source),
     )
     db.commit()

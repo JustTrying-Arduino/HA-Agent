@@ -54,7 +54,8 @@ def init_db():
             input_summary TEXT,
             output_summary TEXT,
             success INTEGER NOT NULL,
-            duration_ms INTEGER NOT NULL
+            duration_ms INTEGER NOT NULL,
+            agent_source TEXT NOT NULL DEFAULT 'main'
         );
 
         CREATE TABLE IF NOT EXISTS reminders (
@@ -121,6 +122,15 @@ def init_db():
         db.execute("ALTER TABLE messages ADD COLUMN model TEXT")
         db.commit()
         logger.info("Migration: added 'model' column to messages table")
+    except Exception:
+        pass  # Column already exists
+
+    try:
+        db.execute(
+            "ALTER TABLE tool_calls ADD COLUMN agent_source TEXT NOT NULL DEFAULT 'main'"
+        )
+        db.commit()
+        logger.info("Migration: added 'agent_source' column to tool_calls table")
     except Exception:
         pass  # Column already exists
 
