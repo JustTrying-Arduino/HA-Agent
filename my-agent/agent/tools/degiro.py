@@ -1,4 +1,4 @@
-"""Tools: Degiro portfolio / search / quote / candles / indicators.
+"""Tools: Degiro portfolio / search / quote / candles / indicators / chart.
 
 All tools are READ-ONLY by construction — the vendored degiro_client copy
 has no order-placement methods (see my-agent/vendor/degiro_client/VENDORED.md).
@@ -10,7 +10,9 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from agent import degiro, indicators
+import httpx
+
+from agent import degiro, indicators, telegram as telegram_dispatch
 from agent.tools import register
 
 logger = logging.getLogger(__name__)
@@ -463,3 +465,162 @@ def degiro_indicators(query: str, strategy: str) -> str:
         "Note: Degiro does not expose OHLV — volume-based confirmations are unavailable."
     )
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# degiro_chart
+# ---------------------------------------------------------------------------
+
+CHART_MAX_POINTS = 250
+QUICKCHART_CREATE_URL = "https://quickchart.io/chart/create"
+
+
+def _downsample_for_chart(xs: list, max_points: int = CHART_MAX_POINTS) -> list:
+    n = len(xs)
+    if n <= max_points:
+        return list(xs)
+    return [xs[round(i * (n - 1) / (max_points - 1))] for i in range(max_points)]
+
+
+def _format_chart_label(ts_iso: str, window: str) -> str:
+    try:
+        dt = datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).astimezone(degiro.PARIS_TZ)
+    except ValueError:
+        return ts_iso
+    if window in ("today-10m", "5d-1h"):
+        return dt.strftime("%d/%m %H:%M")
+    if window == "5y-1w":
+        return dt.strftime("%m/%y")
+    return dt.strftime("%d/%m")
+
+
+def _build_chart_config(title: str, labels: list[str], closes: list[float]) -> dict:
+    going_up = closes[-1] >= closes[0]
+    border = "rgb(34,197,94)" if going_up else "rgb(239,68,68)"
+    bg = "rgba(34,197,94,0.15)" if going_up else "rgba(239,68,68,0.15)"
+    return {
+        "type": "line",
+        "data": {
+            "labels": labels,
+            "datasets": [{
+                "label": title,
+                "data": closes,
+                "borderColor": border,
+                "backgroundColor": bg,
+                "fill": True,
+                "pointRadius": 0,
+                "borderWidth": 2,
+                "tension": 0.25,
+            }],
+        },
+        "options": {
+            "plugins": {
+                "title": {"display": True, "text": title, "font": {"size": 16}},
+                "legend": {"display": False},
+            },
+            "scales": {
+                "y": {"grid": {"color": "rgba(0,0,0,0.05)"}},
+                "x": {"grid": {"display": False}, "ticks": {"maxTicksLimit": 8}},
+            },
+        },
+    }
+
+
+async def _quickchart_url(cfg_dict: dict) -> str:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(
+            QUICKCHART_CREATE_URL,
+            json={"chart": cfg_dict, "version": "4"},
+        )
+        resp.raise_for_status()
+        body = resp.json()
+    if not body.get("success") or not body.get("url"):
+        raise RuntimeError(f"QuickChart did not return a URL: {body!r}")
+    return body["url"]
+
+
+@register(
+    name="degiro_chart",
+    description=(
+        "Generate a PNG line chart of the close-only price series for a "
+        "security on a named window, and send it directly to the user's "
+        "Telegram chat as a photo. Use when the user asks for a graph / "
+        "chart / visual, or when illustrating a market-watch candidate or "
+        "a portfolio line. Windows: today-10m, 5d-1h, 1m-1d, 3m-1d, "
+        "1y-1d, 5y-1w. Returns a short status string; the image arrives "
+        "out-of-band via Telegram."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "ISIN (preferred), symbol or name.",
+            },
+            "window": {
+                "type": "string",
+                "description": "Window name. Default '1y-1d'.",
+                "enum": list(degiro.WINDOW_MAP.keys()),
+            },
+        },
+        "required": ["query"],
+    },
+)
+async def degiro_chart(
+    query: str,
+    window: str = "1y-1d",
+    _context: dict | None = None,
+) -> str:
+    if not degiro.degiro_available():
+        return "Error: Degiro is not configured."
+    chat_id = (_context or {}).get("chat_id")
+    if chat_id is None:
+        return "Error: chart can only be sent in a Telegram chat context."
+
+    ref = degiro.resolve_product(query)
+    if not ref.vwd_id:
+        return f"Error: no vwdId for {query!r}."
+    if not ref.history_ok:
+        return f"Error: no usable price history for {query!r}."
+
+    rows = degiro.load_candles(
+        ref.vwd_id,
+        window,
+        vwd_identifier_type=ref.vwd_identifier_type,
+        currency=ref.currency,
+    )
+    if not rows:
+        return f"No candles returned for {query!r} on window {window}."
+
+    series = build_close_series(
+        rows,
+        vwd_id=ref.vwd_id,
+        vwd_identifier_type=ref.vwd_identifier_type,
+        currency=ref.currency,
+    )
+    raw_labels = [_format_chart_label(r.ts, window) for r in rows]
+    # build_close_series may append an extra intraday point; mirror it on labels
+    if len(series.closes) > len(raw_labels):
+        raw_labels.append(_format_chart_label(series.last_bar_ts, window))
+
+    closes = _downsample_for_chart(series.closes)
+    labels = _downsample_for_chart(raw_labels)
+
+    label = ref.symbol or ref.isin or query
+    title = f"{label} — {window}"
+    caption = f"{ref.name or label} — {window} ({len(closes)} pts, close-only)"
+
+    cfg_dict = _build_chart_config(title, labels, closes)
+    try:
+        url = await _quickchart_url(cfg_dict)
+    except Exception as exc:
+        logger.exception("QuickChart render failed for %s/%s", query, window)
+        return f"Error: failed to render chart ({exc.__class__.__name__})."
+
+    try:
+        await telegram_dispatch.send_photo(int(chat_id), url, caption=caption)
+    except Exception as exc:
+        logger.exception("Failed to send chart to Telegram chat_id=%s", chat_id)
+        return f"Error: chart rendered but Telegram send failed ({exc.__class__.__name__}). URL: {url}"
+
+    return f"Graphique envoye: {label} sur {window} ({len(closes)} points)."

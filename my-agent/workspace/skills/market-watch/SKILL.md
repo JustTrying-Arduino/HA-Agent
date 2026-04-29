@@ -64,7 +64,9 @@ Cible **< 1500 caracteres**. Date au format ISO + heure locale Paris dans le ban
 Degiro ne fournit ni volume ni OHL. Pas de confirmation volume sur breakout / retournement. Toujours signaler quand l'analyse touche au volume.
 
 ## Tools utilises
-`market_watch`, `degiro_indicators`, `degiro_candles`, `degiro_quote`, `degiro_search`, `web_research`.
+`market_watch`, `degiro_indicators`, `degiro_candles`, `degiro_quote`, `degiro_search`, `degiro_chart`, `web_research`.
+
+`degiro_chart` est optionnel: l'utiliser pour illustrer un titre retenu (breakout marque, rebond confirme, ou demande explicite "envoie le graphe"). Pas plus d'1 chart par recap par defaut; ne pas spammer.
 
 ## Watchlist
 Fichier: `skills/market-watch/watchlist.json`. Format ISIN-first: `{ "isin": "...", "label": "...", "currency": "EUR", "exchange_id": "..." (optionnel) }`. Ajouter `exchange_id` / `currency` en cas d'ambiguite (ADR, listings multiples). Lire le fichier pour la liste a jour des groupes (`core_daily`, ...).

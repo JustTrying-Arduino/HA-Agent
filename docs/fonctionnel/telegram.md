@@ -54,6 +54,10 @@ Le backend ne tente pas de "réparer" un HTML libre ou arbitraire. Il applique l
 
 Les messages audio sont transcrits avant passage dans la boucle agent. La transcription repose sur `audio.py`, qui est une utilité interne et non un tool exposé au LLM.
 
+## Envoi de photos
+
+En plus du texte, le bot peut pousser des images dans le chat. C'est utilisé par `degiro_chart` qui génère un PNG via QuickChart.io et appelle `telegram.send_photo(chat_id, url)` directement. Le helper réutilise le même retry transitoire que les envois texte. Le `Bot` est partagé via une variable module-level initialisée par `start_bot()`.
+
 ## Résilience réseau
 
 L'API Telegram est joignable via Internet et peut subir des micro-coupures (DNS, TCP). Le bot applique trois garde-fous:

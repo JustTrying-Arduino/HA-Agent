@@ -30,6 +30,7 @@ Lecture factuelle portefeuille Degiro + observations cadrees — utiliser pour e
 - `degiro_portfolio` (etat des lieux).
 - `degiro_quote` (prix + drawdown 52w).
 - `degiro_indicators` (verdict swing ou rebond sur une ligne).
+- `degiro_chart` (PNG envoye au chat Telegram pour illustrer une ligne en drawdown ou en pullback). Optionnel, ne pas spammer.
 - `web_search` / `web_fetch` pour news fondamentales sur une ligne en drawdown severe.
 
 ## Interdictions

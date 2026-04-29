@@ -30,6 +30,7 @@ Degiro accepte `resolution=P1W` en requete mais renvoie `P7D` dans la serie. HA-
 - `degiro_quote(query)`: prix courant, variation jour, drawdown vs 52w high, distance au 52w low, via `price_metadata()`.
 - `degiro_candles(query, window=?, limit=?)`: serie close-only, fenetres `today-10m`, `5d-1h`, `1m-1d`, `3m-1d`, `1y-1d`, `5y-1w`.
 - `degiro_indicators(query, strategy)`: verdict structure (signal + score + raisons + metriques brutes) pour `rebound` ou `swing`.
+- `degiro_chart(query, window=?)`: genere un PNG (line chart, fill, vert/rouge selon variation) via QuickChart.io et l'envoie au chat Telegram. Memes fenetres que `degiro_candles`. Downsampling uniforme a ≤ 250 points (limite anonyme du service).
 
 ## Cache SQLite
 

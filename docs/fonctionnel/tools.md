@@ -28,7 +28,7 @@ Règles à préserver:
 - web: recherche et récupération de contenu;
 - recherche déléguée: `web_research` — lance des sub-agents de recherche en parallèle (boucle isolée web_search/web_fetch/read_file), retourne une synthèse consolidée;
 - market: `market_watch` — screener par stratégie (rebound / swing) sur une watchlist, alimenté par Degiro (close-only);
-- degiro: `degiro_portfolio`, `degiro_search`, `degiro_quote`, `degiro_candles`, `degiro_indicators` — lecture seule, aucune capacité de passer un ordre (méthodes `place_order`, `check_order`, `confirm_order`, `cancel_order` physiquement retirées du client vendored);
+- degiro: `degiro_portfolio`, `degiro_search`, `degiro_quote`, `degiro_candles`, `degiro_indicators`, `degiro_chart` — lecture seule, aucune capacité de passer un ordre (méthodes `place_order`, `check_order`, `confirm_order`, `cancel_order` physiquement retirées du client vendored). `degiro_chart` produit un PNG via QuickChart.io et le pousse dans le chat Telegram en `send_photo`;
 - home assistant: recherche d'entités exposées, lecture d'état et appel de services via Supervisor;
 - reminders: création et gestion de rappels;
 - routage: `escalate_model` pour la bascule de modèle.
@@ -52,6 +52,7 @@ Règles à préserver:
 - `web_research`: jusqu'à 5 sous-tâches par appel, max 3 sub-agents concurrents (semaphore), timeout 180 s par sub-agent. Voir `sub-agents.md`.
 - cache de résolution du label Home Assistant: 60 secondes.
 - veille boursière: indicateurs close-only (Degiro ne fournit ni volume ni OHL). Les confirmations volume ne sont pas disponibles — croiser avec `web_search` / `web_fetch` si nécessaire.
+- `degiro_chart`: rendu via QuickChart.io (POST `/chart/create`, dépendance externe). Downsampling uniforme à ≤ 250 points (limite anonyme du service). Premier et dernier point préservés; perte ≤ 4 % sur `1y-1d` / `5y-1w`. Renvoie un message texte court; l'image arrive séparément en `send_photo` Telegram.
 - famille `degiro_*`: lecture seule. Les méthodes de passage d'ordre ne sont pas importables (retirées du client vendored). Le portefeuille peut être lu, les analyses techniques proposées, mais aucun ordre ne peut être déclenché par l'agent.
 
 Le projet ne sandboxe pas les tools à l'intérieur du conteneur. Cette liberté est intentionnelle et fait partie du contrat d'usage du projet.

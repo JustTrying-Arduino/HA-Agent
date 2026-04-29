@@ -7,7 +7,7 @@ import tempfile
 import logging
 import re
 
-from telegram import Update
+from telegram import Bot, Update
 from telegram.constants import ParseMode
 from telegram.error import NetworkError, TimedOut
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
@@ -37,6 +37,7 @@ STATUS_TOOLS = {
     "ha_search_entities",
     "ha_get_state",
     "ha_call_service",
+    "degiro_chart",
 }
 TOOL_STATUS_LABELS = {
     "read_file": "Lecture de fichier...",
@@ -55,11 +56,14 @@ TOOL_STATUS_LABELS = {
     "list_reminders": "Consultation des rappels...",
     "update_reminder": "Mise a jour du rappel...",
     "cancel_reminder": "Annulation du rappel...",
+    "degiro_chart": "Generation du graphique...",
 }
 
 
 TRANSIENT_NETWORK_ERRORS = (TimedOut, NetworkError)
 TRANSIENT_RETRY_DELAYS = (0.5, 1.0)
+
+_bot: Bot | None = None
 
 
 async def _on_telegram_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -68,6 +72,7 @@ async def _on_telegram_error(update: object, context: ContextTypes.DEFAULT_TYPE)
 
 def start_bot() -> Application:
     """Create and return the Telegram Application (do NOT call run_polling)."""
+    global _bot
     app = (
         Application.builder()
         .token(cfg.telegram_bot_token)
@@ -81,7 +86,19 @@ def start_bot() -> Application:
     )
     app.add_handler(MessageHandler(filters.TEXT | filters.VOICE | filters.AUDIO, handle_message))
     app.add_error_handler(_on_telegram_error)
+    _bot = app.bot
     return app
+
+
+async def send_photo(chat_id: int, photo: str, caption: str | None = None) -> None:
+    """Send a photo (URL or file_id) to the given chat. Used by tools that
+    produce visual output (e.g. degiro_chart)."""
+    if _bot is None:
+        raise RuntimeError("Telegram bot not initialized — call start_bot() first.")
+    await _call_with_transient_retry(
+        lambda: _bot.send_photo(chat_id=chat_id, photo=photo, caption=caption),
+        "Failed to send Telegram photo",
+    )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

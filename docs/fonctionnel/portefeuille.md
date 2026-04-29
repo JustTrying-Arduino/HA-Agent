@@ -38,6 +38,7 @@ Tous lecture seule, exposes uniquement si les credentials sont configures.
 | `degiro_quote(query)` | Prix courant + variation jour + drawdown vs 52w high + distance au 52w low. Via `price_metadata()`. |
 | `degiro_candles(query, window=?, limit=?)` | Serie close-only. Fenetres: `today-10m`, `5d-1h`, `1m-1d`, `3m-1d`, `1y-1d`, `5y-1w`. |
 | `degiro_indicators(query, strategy)` | Verdict structure (`candidate` / `reject` / `neutral`) sur une strategie rebound ou swing. |
+| `degiro_chart(query, window=?)` | Rend un PNG line-chart via QuickChart.io et l'envoie au chat Telegram en `send_photo`. Memes fenetres que `degiro_candles`. Downsample a ≤ 250 points. |
 
 `market_watch(strategy, group=?)` (famille market) est le screener de la watchlist selon la strategie choisie.
 
