@@ -13,6 +13,7 @@ La veille boursiere repose desormais sur Degiro: donnees close-only intraday (PT
 
 ### Limitation close-only
 
+- "close-only" porte sur le contenu de chaque candle, **pas** sur la granularite temporelle: les variations intra-journee restent accessibles via `PT10M` / `PT15M` / `PT1H` (chaque tick = un close).
 - `price_history()` renvoie **uniquement `close` et `timestamp`**. `open`, `high`, `low`, `volume` ne sont jamais peuples.
 - Les indicateurs disponibles sont donc close-only: pas de confirmations "volume au retournement" ou "volume sur breakout" cote tool.
 - Pour un breakout douteux, croiser avec `web_search` / `web_fetch`.
@@ -23,7 +24,7 @@ Degiro accepte `resolution=P1W` en requete mais renvoie `P7D` dans la serie. HA-
 
 ## Tools exposes
 
-- `market_watch(strategy, group=?, max_candidates=?)`: screener par strategie (`rebound` ou `swing`) sur la watchlist. Renvoie candidats, rejets (falling knives pour rebound), neutres.
+- `market_watch(strategy, group=?, max_candidates=?)`: screener par strategie (`rebound` ou `swing`) sur la watchlist. Renvoie candidats, **recoveries** (rebonds deja avances, hors scope d'entree), rejets (falling knives pour rebound), neutres. Bandeau de fraicheur en tete (`last_bar_max`, nombre de bougies provisoires).
 - `degiro_portfolio(include_closed=?)`: snapshot du portefeuille (positions, cash, P&L jour et cumulatif). Accepte les lignes `FLATEX_EUR` et les positions sans historique.
 - `degiro_search(query, limit=?)`: resolution symbole / ISIN / currency.
 - `degiro_quote(query)`: prix courant, variation jour, drawdown vs 52w high, distance au 52w low, via `price_metadata()`.
@@ -39,14 +40,28 @@ Deux tables locales (creees par `agent/db.py`):
 
 Les tables `market_eod_prices` et `market_api_usage` sont supprimees (DROP au boot).
 
+### Fraicheur de la bougie du jour (market-hours-aware)
+
+`load_candles(..., currency=...)` evite de servir une bougie daily du jour qui ne serait pas encore settled:
+
+- Heures de settle (helper `is_today_bar_settled(currency)` dans `agent/degiro.py`):
+  - currency `USD` (NYSE / NASDAQ) -> settle a partir de **22h30 Paris**.
+  - sinon (Euronext-like) -> settle a partir de **18h05 Paris**.
+- Si la derniere `ts` cachee est aujourd'hui (Paris) **et** que le marche n'est pas encore settled, le tool **force un refresh** quel que soit le TTL de 8h.
+- Cote outils analytiques (`degiro_indicators`, `market_watch`), `build_close_series(...)` greffe en plus la **derniere bougie intraday** (`today-10m`) comme bougie provisoire quand le close du jour manque ou n'est pas settled. La sortie expose `bar_ts` et `provisional=True/False` par titre, plus un bandeau global `last_bar_max` / `provisional=N/M`.
+
+Effet: les indicateurs reflètent l'etat du marche **a l'heure ou le tool est appele**, et pas l'instantane fige par une session precedente.
+
 ## Strategies
 
 ### Rebond
-- RSI(14) < 30 (marque "extreme" si < 20).
+- **Gate RSI strict**: si RSI(14) > 35 -> signal `neutral` immediat. Le label "rebond" implique survente.
+- **Filtre anti-rattrapage**: si `var_3d` > +4 % -> signal `recovery` (rebond deja avance, hors scope d'entree).
 - Drawdown vs `highPriceP1Y` (seuil defaut -20 %).
 - Proximite d'un niveau de support dense (clustering des closes).
-- Debut de reprise: close(t) > close(t-1) ou stabilisation sur 2-3 points.
-- Rejet automatique "falling knife" si cluster de support casse (close < densest_level * 0.98) + RSI < 30 + pente SMA50 negative.
+- **Bounce pondere**: var_1d entre +0,3 % et +2 % sur la derniere seance -> +1 point. Au-dessus de +2 %, la bougie est flaggee "too stretched" et n'apporte pas de point.
+- Rejet automatique `reject` ("falling knife") si cluster de support casse (close < densest_level * 0.98) + RSI < 30 + pente SMA50 negative. Court-circuite tous les autres tests.
+- Seuil de declenchement `candidate`: score >= 3.
 
 ### Swing
 - Tendance haussiere: close > SMA200 **et** SMA50 > SMA200.
@@ -82,11 +97,10 @@ Une fois les 1 a 3 candidats retenus, `web_research` avec une tache par titre (l
 
 Le workflow nominal de la skill `market-watch` est le **recap quotidien dual-strategie** sur `core_daily`:
 
-1. `market_watch(strategy="rebound", group="core_daily")` puis `market_watch(strategy="swing", group="core_daily")`. Le cache `degiro_prices` (TTL daily 8 h) rend le 2e appel quasi gratuit.
-2. Construction d'une shortlist (max 5 noms): confluents > top rebond > top swing.
-3. Zoom `degiro_indicators` par nom retenu sur la strategie dominante.
-4. `web_research` sur **2 a 4 noms maximum** (une tache par titre, sub-agents paralleles) pour le contexte fondamental.
-5. Sortie Telegram courte (< 1500 caracteres) avec recommandation par nom et rappel close-only.
+1. `market_watch(strategy="rebound", group="core_daily")` puis `market_watch(strategy="swing", group="core_daily")`. Le cache `degiro_prices` (TTL daily 8 h, invalide en intra-session) rend le 2e appel quasi gratuit.
+2. Filtrer **uniquement les `signal == "candidate"`**. Les `recovery`, `reject` et `neutral` sont ignores. Trier par score decroissant, cumuler rebond + swing, garder au plus 5 noms.
+3. `web_research` batche sur les noms shortlistes (max 5 taches dans un seul tool_call) pour la lecture news.
+4. Le LLM redige une **phrase courte par titre integrant metrics + news**, puis emet un message Telegram a deux sections (`Rebond`, `Swing`). **Pas de section news dediee, pas de shortlist**. Bandeau de fraicheur en tete (`provisoire` ou `settled`). Cible < 1500 caracteres. Toujours utiliser le `label` de la watchlist (= nom d'entreprise), jamais le ticker ou l'ISIN.
 
 Les workflows secondaires (mono-strategie, zoom mono-titre) restent disponibles. Detail dans `skills/market-watch/SKILL.md`.
 

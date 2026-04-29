@@ -70,6 +70,68 @@ class IndicatorTests(unittest.TestCase):
         self.assertEqual(verdict.signal, "reject")
         self.assertTrue(any("falling knife" in r for r in verdict.reasons))
 
+    def test_evaluate_rebound_rsi_gate_blocks_recovered(self):
+        """AIR-like case: drawdown big, near support, but RSI no longer oversold.
+        The RSI gate must short-circuit to `neutral`."""
+        # Long balanced sequence so the recent RSI sits above 35.
+        closes = [100.0]
+        for i in range(1, 80):
+            # Slight uptrend with high noise → RSI should land in 40-60 range.
+            closes.append(closes[-1] + ((-1) ** i) * 0.6 + 0.05)
+        verdict = indicators.evaluate_rebound(closes, high_52w=120.0)
+        rsi = verdict.metrics.get("rsi14")
+        self.assertIsNotNone(rsi)
+        self.assertGreater(rsi, 35.0)
+        self.assertEqual(verdict.signal, "neutral")
+        self.assertTrue(any("not oversold" in r for r in verdict.reasons))
+
+    def test_evaluate_rebound_recovery_already_advanced(self):
+        """RSI still in oversold range but var_3d already > +4% on the last 3
+        sessions → signal `recovery` (ticket parti)."""
+        closes = [100.0] * 5
+        # 20-day steep drop (-1.5/day) — RSI deep oversold.
+        for i in range(1, 21):
+            closes.append(100.0 - i * 1.5)  # ends at 70
+        # Consolidation at the bottom forms a cluster (no support break later).
+        closes += [70.0] * 10
+        # 3-day strong bounce: 70 → 71.5 → 72.5 → 73.0 (var_3d ≈ +4.29%).
+        closes += [71.5, 72.5, 73.0]
+        verdict = indicators.evaluate_rebound(closes, high_52w=100.0)
+        self.assertEqual(verdict.signal, "recovery")
+        self.assertTrue(any("already in progress" in r for r in verdict.reasons))
+
+    def test_evaluate_rebound_clean_candidate(self):
+        """RSI deep oversold + drawdown ≤ -20% + near support cluster + small
+        early bounce in [+0.3%, +2%] → candidate with score 4."""
+        closes = [100.0] * 5
+        # 8-day big drop (steep, builds heavy avg_loss in RSI).
+        closes += [99.0, 97.5, 95.0, 92.0, 89.0, 86.0, 83.0, 80.0]
+        # 30-day consolidation at 78 — densest cluster, support holds.
+        closes += [78.0] * 30
+        # Tiny bounce today.
+        closes.append(78.5)
+        verdict = indicators.evaluate_rebound(closes, high_52w=100.0)
+        self.assertEqual(verdict.signal, "candidate")
+        self.assertGreaterEqual(verdict.score, 3)
+        self.assertTrue(any("early bounce" in r for r in verdict.reasons))
+
+    def test_evaluate_rebound_stretched_bounce_no_point(self):
+        """RSI deep oversold + DD ≤ -20% + near support, but the last bar jumps
+        +2.1% — over the bounce ceiling. The bounce contributes 0 point and the
+        verdict carries a 'too stretched' reason."""
+        # Same shape as the clean candidate but with a shorter consolidation
+        # so the RSI stays oversold even after a +2.1% bounce.
+        closes = [100.0] * 5
+        closes += [99.0, 97.5, 95.0, 92.0, 89.0, 86.0, 83.0, 80.0]
+        closes += [78.0] * 17
+        closes.append(78.0 * 1.021)  # +2.1% — just over the +2% bounce ceiling
+        verdict = indicators.evaluate_rebound(closes, high_52w=100.0)
+        self.assertNotEqual(verdict.signal, "recovery")
+        self.assertTrue(
+            any("too stretched" in r for r in verdict.reasons),
+            f"reasons did not flag stretched bounce: {verdict.reasons}",
+        )
+
     def test_evaluate_swing_requires_long_history(self):
         verdict = indicators.evaluate_swing([1.0] * 100)
         self.assertEqual(verdict.signal, "neutral")
@@ -87,6 +149,139 @@ class IndicatorTests(unittest.TestCase):
     def test_unknown_strategy_raises(self):
         with self.assertRaises(ValueError):
             indicators.evaluate("unknown", [1.0, 2.0, 3.0])
+
+
+class FreshnessHelpersTests(unittest.TestCase):
+    def test_is_today_bar_settled_eu(self):
+        from datetime import datetime
+        from agent.degiro import PARIS_TZ, is_today_bar_settled
+
+        before = datetime(2026, 4, 29, 17, 30, tzinfo=PARIS_TZ)
+        self.assertFalse(is_today_bar_settled("EUR", now=before))
+        boundary = datetime(2026, 4, 29, 18, 5, tzinfo=PARIS_TZ)
+        self.assertTrue(is_today_bar_settled("EUR", now=boundary))
+
+    def test_is_today_bar_settled_us(self):
+        from datetime import datetime
+        from agent.degiro import PARIS_TZ, is_today_bar_settled
+
+        before = datetime(2026, 4, 29, 22, 0, tzinfo=PARIS_TZ)
+        self.assertFalse(is_today_bar_settled("USD", now=before))
+        after = datetime(2026, 4, 29, 22, 30, tzinfo=PARIS_TZ)
+        self.assertTrue(is_today_bar_settled("USD", now=after))
+
+    def test_is_today_bar_settled_defaults_to_eu(self):
+        from datetime import datetime
+        from agent.degiro import PARIS_TZ, is_today_bar_settled
+
+        before = datetime(2026, 4, 29, 17, 0, tzinfo=PARIS_TZ)
+        self.assertFalse(is_today_bar_settled(None, now=before))
+        after = datetime(2026, 4, 29, 18, 5, tzinfo=PARIS_TZ)
+        self.assertTrue(is_today_bar_settled(None, now=after))
+
+
+class BuildCloseSeriesTests(unittest.TestCase):
+    def setUp(self):
+        from agent.tools import degiro as tools_degiro
+        self.tools_degiro = tools_degiro
+
+    def _row(self, ts: str, close: float):
+        from agent.degiro import CandleRow
+        return CandleRow(ts=ts, close=close)
+
+    def test_settled_bar_today_no_intraday_call(self):
+        from datetime import datetime
+        from agent.degiro import PARIS_TZ
+
+        now = datetime(2026, 4, 29, 19, 0, tzinfo=PARIS_TZ)
+        rows = [
+            self._row("2026-04-28T15:30:00Z", 100.0),
+            self._row("2026-04-29T15:30:00Z", 101.0),
+        ]
+        with patch.object(self.tools_degiro, "_latest_intraday_close") as mock_intraday:
+            series = self.tools_degiro.build_close_series(
+                rows,
+                vwd_id="vwd-X",
+                vwd_identifier_type="issueid",
+                currency="EUR",
+                now=now,
+            )
+        self.assertFalse(series.is_provisional)
+        self.assertEqual(series.closes, [100.0, 101.0])
+        mock_intraday.assert_not_called()
+
+    def test_unsettled_today_bar_replaced_with_intraday(self):
+        from datetime import datetime
+        from agent.degiro import PARIS_TZ
+
+        now = datetime(2026, 4, 29, 17, 30, tzinfo=PARIS_TZ)  # before EU settle
+        rows = [
+            self._row("2026-04-28T15:30:00Z", 100.0),
+            self._row("2026-04-29T13:00:00Z", 101.0),  # cached but stale today bar
+        ]
+        with patch.object(
+            self.tools_degiro,
+            "_latest_intraday_close",
+            return_value=(103.5, "2026-04-29T15:35:00Z"),
+        ):
+            series = self.tools_degiro.build_close_series(
+                rows,
+                vwd_id="vwd-X",
+                vwd_identifier_type="issueid",
+                currency="EUR",
+                now=now,
+            )
+        self.assertTrue(series.is_provisional)
+        self.assertEqual(series.closes[-1], 103.5)
+        self.assertEqual(series.last_bar_ts, "2026-04-29T15:35:00Z")
+
+    def test_no_today_bar_intraday_appended(self):
+        from datetime import datetime
+        from agent.degiro import PARIS_TZ
+
+        now = datetime(2026, 4, 29, 14, 0, tzinfo=PARIS_TZ)
+        rows = [
+            self._row("2026-04-27T15:30:00Z", 99.0),
+            self._row("2026-04-28T15:30:00Z", 100.0),
+        ]
+        with patch.object(
+            self.tools_degiro,
+            "_latest_intraday_close",
+            return_value=(102.2, "2026-04-29T13:50:00Z"),
+        ):
+            series = self.tools_degiro.build_close_series(
+                rows,
+                vwd_id="vwd-X",
+                vwd_identifier_type="issueid",
+                currency="EUR",
+                now=now,
+            )
+        self.assertTrue(series.is_provisional)
+        self.assertEqual(series.closes[-1], 102.2)
+        self.assertEqual(len(series.closes), 3)
+
+    def test_no_today_bar_intraday_unavailable(self):
+        from datetime import datetime
+        from agent.degiro import PARIS_TZ
+
+        now = datetime(2026, 4, 29, 14, 0, tzinfo=PARIS_TZ)
+        rows = [self._row("2026-04-28T15:30:00Z", 100.0)]
+        with patch.object(
+            self.tools_degiro,
+            "_latest_intraday_close",
+            return_value=(None, None),
+        ):
+            series = self.tools_degiro.build_close_series(
+                rows,
+                vwd_id="vwd-X",
+                vwd_identifier_type="issueid",
+                currency="EUR",
+                now=now,
+            )
+        # No intraday data → fall back to the last cached bar; not provisional
+        # because the cached bar isn't today (no today-bar-staleness to flag).
+        self.assertFalse(series.is_provisional)
+        self.assertEqual(series.closes, [100.0])
 
 
 # ---------------------------------------------------------------------------

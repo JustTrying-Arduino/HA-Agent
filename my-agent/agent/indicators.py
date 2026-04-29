@@ -145,15 +145,23 @@ def _last(closes: list[float]) -> float | None:
     return closes[-1] if closes else None
 
 
+REBOUND_RSI_GATE = 35.0
+REBOUND_RECOVERY_3D_THRESHOLD = 4.0
+REBOUND_BOUNCE_MIN = 0.3
+REBOUND_BOUNCE_MAX = 2.0
+
+
 def evaluate_rebound(
     closes: list[float],
     *,
     high_52w: float | None,
     drawdown_threshold: float = -20.0,
 ) -> StrategyVerdict:
-    """Rebond: RSI<30 + drawdown vs 52w high + proximity to support +
-    début de reprise. Rejet si falling-knife (support cassé + RSI bas +
-    SMA50 descendante)."""
+    """Rebond après forte baisse: RSI ≤ 35 (gate strict), drawdown vs 52w
+    high, proximité support, début de reprise mesurée. Filtre anti-rattrapage:
+    si la reprise est déjà avancée (var_3d > +4%), bascule en `recovery`
+    (ticket parti). Rejet `falling knife` si support cassé + RSI bas +
+    SMA50 descendante."""
     verdict = StrategyVerdict(strategy="rebound", signal="neutral", score=0)
     if len(closes) < 30:
         verdict.reasons.append("not enough history (need ≥30 closes)")
@@ -167,9 +175,9 @@ def evaluate_rebound(
     last = closes[-1]
     sup = distance_to_nearest_support(last, levels)
     densest = levels[0] if levels else None
-    support_broken = (
-        densest is not None and last < densest.price * 0.98
-    )
+    support_broken = densest is not None and last < densest.price * 0.98
+    var_1d = variation(closes, 1)
+    var_3d = variation(closes, 3)
 
     verdict.metrics = {
         "rsi14": rsi,
@@ -180,32 +188,9 @@ def evaluate_rebound(
         "support_price": sup[0].price if sup else None,
         "support_distance_pct": sup[1] if sup else None,
         "densest_level": densest.price if densest else None,
+        "var_1d_pct": var_1d,
+        "var_3d_pct": var_3d,
     }
-
-    if rsi is not None and rsi < 30:
-        verdict.score += 1
-        verdict.reasons.append(
-            f"RSI14 oversold ({rsi:.1f}{' — extreme' if rsi < 20 else ''})"
-        )
-    if dd is not None and dd <= drawdown_threshold:
-        verdict.score += 1
-        verdict.reasons.append(f"drawdown vs 52w high {dd:+.1f}%")
-    if sup is not None and 0 <= sup[1] <= 3.0:
-        verdict.score += 1
-        verdict.reasons.append(
-            f"near support {sup[0].price:.2f} ({sup[1]:+.1f}%)"
-        )
-
-    if len(closes) >= 3:
-        recovering = closes[-1] > closes[-2]
-        stabilising = (
-            max(closes[-3:]) - min(closes[-3:])
-        ) / closes[-1] < 0.01 if closes[-1] else False
-        if recovering or stabilising:
-            verdict.score += 1
-            verdict.reasons.append(
-                "bounce: recovering" if recovering else "bounce: stabilising"
-            )
 
     falling_knife = (
         support_broken
@@ -218,6 +203,47 @@ def evaluate_rebound(
         verdict.signal = "reject"
         verdict.reasons.append("falling knife: support broken + RSI low + SMA50 down")
         return verdict
+
+    if rsi is None or rsi > REBOUND_RSI_GATE:
+        rsi_str = f"{rsi:.1f}" if rsi is not None else "n/a"
+        verdict.reasons.append(
+            f"RSI14 not oversold ({rsi_str} > {REBOUND_RSI_GATE:.0f}) — not a rebound setup"
+        )
+        return verdict
+
+    if var_3d is not None and var_3d > REBOUND_RECOVERY_3D_THRESHOLD:
+        verdict.signal = "recovery"
+        verdict.reasons.append(
+            f"recovery already in progress (var_3d {var_3d:+.1f}% > "
+            f"+{REBOUND_RECOVERY_3D_THRESHOLD:.0f}%) — ticket parti"
+        )
+        return verdict
+
+    verdict.score += 1
+    verdict.reasons.append(
+        f"RSI14 oversold ({rsi:.1f}{' — extreme' if rsi < 20 else ''})"
+    )
+    if dd is not None and dd <= drawdown_threshold:
+        verdict.score += 1
+        verdict.reasons.append(f"drawdown vs 52w high {dd:+.1f}%")
+    if sup is not None and 0 <= sup[1] <= 3.0:
+        verdict.score += 1
+        verdict.reasons.append(
+            f"near support {sup[0].price:.2f} ({sup[1]:+.1f}%)"
+        )
+
+    if (
+        var_1d is not None
+        and REBOUND_BOUNCE_MIN <= var_1d <= REBOUND_BOUNCE_MAX
+    ):
+        verdict.score += 1
+        verdict.reasons.append(
+            f"early bounce ({var_1d:+.1f}% on last close — measured pace)"
+        )
+    elif var_1d is not None and var_1d > REBOUND_BOUNCE_MAX:
+        verdict.reasons.append(
+            f"bounce too stretched ({var_1d:+.1f}% on last close) — no point"
+        )
 
     if verdict.score >= 3:
         verdict.signal = "candidate"

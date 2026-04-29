@@ -9,15 +9,12 @@ Veille boursiere sur la watchlist Degiro (close-only). Workflow par defaut: reca
 - "rebond cac", "swing us" -> workflow mono-strategie sur un groupe specifique.
 
 ## Workflow par defaut: recap dual-strategie
-1. `market_watch(strategy="rebound", group="core_daily", max_candidates=8)`.
-2. `market_watch(strategy="swing",   group="core_daily", max_candidates=8)`.
-3. Construire la shortlist (max 5 noms, ordre de priorite):
-   a. candidats sur les **deux** strategies (setup confluent),
-   b. top rebond par score decroissant,
-   c. top swing par score decroissant.
-4. Pour chaque nom shortliste: `degiro_indicators(query=ISIN, strategy=...)` sur la strategie dominante. Recuperer RSI, drawdown, SMA50, SMA200, ecart au support, score.
-5. Why web sur **4 noms maximum**: appeler `web_research` en un seul tool_call avec une tache par titre (`question="news recentes affectant <label> (-X%)?"`, `hint="ticker=<ISIN>, var=-X% sur <date>"`). Les sub-agents tournent en parallele, sources prioritaires Reuters, Bloomberg, FT, WSJ, Les Echos, Boursorama, site corporate. Conserver 1 ligne par titre pour distinguer baisse technique / news / deterioration fondamentale.
-6. Sortir au format Telegram (cf. Output).
+1. `market_watch(strategy="rebound", group="core_daily")` puis `market_watch(strategy="swing", group="core_daily")`.
+2. Filtrer **uniquement les `signal == "candidate"`**. Les `recovery` (rebond deja avance) ne remontent pas dans le recap. Les `reject` / `neutral` non plus.
+3. Trier les candidates restants par score decroissant. Cumuler rebond + swing. Si > 5 noms cumules, **garder les 5 meilleurs scores cumules**.
+4. **Pour chaque candidate** retenu, batcher un seul appel `web_research` avec une tache par titre (max 5 taches dans le tool_call), `question="news recentes affectant <label> sur la derniere semaine"`, `hint="ticker=<ISIN>, contexte: rebond/swing technique"`. Sources prioritaires Reuters, Bloomberg, FT, WSJ, Les Echos, Boursorama, site corporate.
+5. Rediger une **phrase courte par titre** integrant **metrics + news**: ex. *"Airbus — proche support a -1.2%, RSI 28, debut de reprise mesuree ; news : guidance 2026 maintenue malgre livraisons en retard."* Phrase < 200 caracteres.
+6. Sortir au format Telegram (cf. Output). Si aucune candidate sur les deux strategies: message court "Rien a signaler aujourd'hui sur core_daily. Donnees arretees au <ts>."
 
 ## Workflows secondaires
 - **Mono-strategie**: `market_watch(strategy=..., group=...)` puis `degiro_indicators` sur 1-3 noms retenus.
@@ -25,42 +22,42 @@ Veille boursiere sur la watchlist Degiro (close-only). Workflow par defaut: reca
 
 ## Strategies (resume — detail dans `agent/indicators.py`)
 ### Rebond
-RSI(14) < 30, drawdown vs 52w high (-20 % par defaut), proximite cluster support, debut de reprise. Rejet "falling knife": support casse + RSI bas + pente SMA50 negative.
+RSI(14) ≤ 35 (gate strict, sinon `neutral`), drawdown vs 52w high (-20% par defaut), proximite cluster support, debut de reprise mesuree (var_1d entre +0.3% et +2%). Filtre anti-rattrapage: si var_3d > +4% -> signal `recovery` (deja parti, pas a entrer). Rejet "falling knife": support casse + RSI bas + pente SMA50 negative.
 ### Swing
-Close > SMA200 **et** SMA50 > SMA200, pullback propre vers SMA50 (ecart <= 3 %), reprise close-only, breakout = close > max(20 closes precedents).
+Close > SMA200 **et** SMA50 > SMA200, pullback propre vers SMA50 (ecart ≤ 3%), reprise close-only, breakout = close > max(20 closes precedents).
 
-## Recommandations a produire
-- Rebond seul: "guetter rebond" si support tient et debut de reprise, "attendre confirmation" sinon (close > close-1 sur 2 seances).
-- Swing seul: "swing valide" (pullback + reprise), "breakout actif" (close > 20-high), "trend casse" (SMA50 < SMA200).
-- Confluent: "setup confluent" — citer les deux signaux.
-- Toujours rappeler la limite close-only quand le verdict implique du volume.
-- **Jamais** suggerer un ordre. L'agent ne passe pas d'ordre.
+## Fraicheur des donnees
+- Le tool greffe automatiquement la derniere bougie intraday comme **bougie provisoire** quand le close du jour n'est pas encore settled (Euronext < 18h05, NYSE/NASDAQ < 22h30 Paris) ou que la cache n'a pas encore aujourd'hui.
+- La sortie tool inclut `bar_ts` et `provisional=True/False` par titre, et un bandeau `Freshness: last_bar_max=... | provisional=N/M`.
+- Cas **provisoire**: signaler dans le bandeau Telegram (`provisoire`). Cas **settled**: marquer `settled`.
 
 ## Output Telegram (recap)
-Cible < 1500 caracteres. Date au format ISO en heure locale Paris.
+Cible **< 1500 caracteres**. Date au format ISO + heure locale Paris dans le bandeau.
 
 ```
-Recap core daily — <YYYY-MM-DD>
+<b>Recap core_daily</b> — <YYYY-MM-DD HH:MM> (<provisoire|settled>)
 
-Setups confluents (n):
-- TICKER (label) | reco | RSI=.. SMA50=.. DD=-..%
-  why: <1 ligne>
+<b>Rebond</b> (n)
+- <b>Airbus</b> — <phrase analyse + news inline>
+- <b>Saint-Gobain</b> — <phrase analyse + news inline>
 
-Rebond (n):
-- TICKER | reco | metriques cles
+<b>Swing</b> (n)
+- <b>Veolia</b> — <phrase analyse + news inline>
+- <b>Engie</b> — <phrase analyse + news inline>
 
-Swing (n):
-- TICKER | reco | metriques cles
-
-Rejets: <noms>
-
-Note close-only.
+<i>Close-only Degiro. Pas de confirmation volume.</i>
 ```
 
-Cas vide: "Rien a signaler aujourd'hui sur core_daily" + eventuels rejets / falling knives.
+**Regles strictes du format**:
+- Toujours utiliser le `label` (= nom d'entreprise) du watchlist. **Pas de ticker, pas d'ISIN** dans le message.
+- Section omise entierement si vide (pas de `Rebond (0)`).
+- **Pas de section "Lecture news"** dediee, **pas de "Shortlist"** finale. La news est inline dans la phrase de chaque titre.
+- Phrases courtes, 1 ligne par titre, < 200 caracteres.
+- Bandeau de tete: `<provisoire>` si au moins 1 titre est en bougie provisoire, sinon `<settled>`.
+- **Jamais** suggerer un ordre. L'agent ne passe pas d'ordre.
 
 ## Garde-fous
-- Maximum **4** taches dans le batch `web_research` par recap (une par titre).
+- Maximum **5** taches dans le batch `web_research` par recap (une par titre shortliste).
 - Si `market_watch` echoue (Degiro offline, credentials, etc.): message court explicite, ne rien inventer.
 
 ## Limitations close-only

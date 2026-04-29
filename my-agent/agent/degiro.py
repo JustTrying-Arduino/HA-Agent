@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
+# Heuristic: when the official close-of-day for the primary market of a
+# given currency is published and stable. Used to decide whether the
+# cached "today" daily bar is trustworthy or still intra-session.
+EU_CLOSE_SETTLE_HOUR = 18
+EU_CLOSE_SETTLE_MINUTE = 5
+US_CLOSE_SETTLE_HOUR = 22
+US_CLOSE_SETTLE_MINUTE = 30
+
 PRODUCT_CACHE_TTL = timedelta(days=7)
 
 WINDOW_MAP: dict[str, tuple[str, str]] = {
@@ -112,6 +120,20 @@ def get_client() -> DegiroClient:
             )
             _store_fingerprint(current_fp)
     return _client
+
+
+def is_today_bar_settled(currency: str | None, *, now: datetime | None = None) -> bool:
+    """Return True if today's official close for `currency`'s primary market
+    is published and stable. Heuristic by currency: USD → NYSE/NASDAQ
+    (close 22:00 Paris, settle by 22:30); anything else → Euronext-like
+    (close 17:30 Paris, settle by 18:05). The `now` argument is only used
+    by tests."""
+    paris_now = (now or datetime.now(PARIS_TZ)).astimezone(PARIS_TZ)
+    if (currency or "EUR").upper() == "USD":
+        h, m = US_CLOSE_SETTLE_HOUR, US_CLOSE_SETTLE_MINUTE
+    else:
+        h, m = EU_CLOSE_SETTLE_HOUR, EU_CLOSE_SETTLE_MINUTE
+    return (paris_now.hour, paris_now.minute) >= (h, m)
 
 
 def _paris_to_utc_iso(dt: datetime) -> str:
@@ -381,6 +403,17 @@ def _latest_fetched_at(vwd_id: str, resolution: str) -> datetime | None:
     return datetime.fromisoformat(raw.replace("Z", "+00:00"))
 
 
+def _latest_bar_ts(vwd_id: str, resolution: str) -> datetime | None:
+    row = fetchone(
+        "SELECT MAX(ts) AS t FROM degiro_prices WHERE vwd_id = ? AND resolution = ?",
+        (vwd_id, resolution),
+    )
+    raw = row["t"] if row else None
+    if not raw:
+        return None
+    return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+
+
 def _candles_are_fresh(vwd_id: str, resolution: str) -> bool:
     latest = _latest_fetched_at(vwd_id, resolution)
     if latest is None:
@@ -432,10 +465,27 @@ def load_candles(
     *,
     refresh: bool = True,
     vwd_identifier_type: str | None = None,
+    currency: str | None = None,
 ) -> list[CandleRow]:
-    """Fetch candles (or return cached), persist to SQLite, return close-only rows."""
+    """Fetch candles (or return cached), persist to SQLite, return close-only rows.
+
+    `currency` lets the cache decide whether today's daily bar is settled:
+    if a daily bar dated today is in cache but the market hasn't settled yet
+    (Euronext < 18:05, NYSE/NASDAQ < 22:30 Paris), force a refresh — the
+    cached close is intra-session noise.
+    """
     period, resolution = window_to_period_resolution(window)
-    if refresh and not _candles_are_fresh(vwd_id, resolution):
+    force_refresh = False
+    if refresh and resolution == "P1D":
+        latest_bar = _latest_bar_ts(vwd_id, resolution)
+        if latest_bar is not None:
+            today_paris = datetime.now(PARIS_TZ).date()
+            if (
+                latest_bar.astimezone(PARIS_TZ).date() == today_paris
+                and not is_today_bar_settled(currency)
+            ):
+                force_refresh = True
+    if refresh and (force_refresh or not _candles_are_fresh(vwd_id, resolution)):
         client = get_client()
         candles = client.price_history(
             vwd_id,

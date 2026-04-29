@@ -14,6 +14,7 @@ from pathlib import Path
 from agent import degiro, indicators
 from agent.config import cfg
 from agent.tools import register
+from agent.tools.degiro import build_close_series
 
 logger = logging.getLogger(__name__)
 
@@ -135,12 +136,20 @@ def _analyze_entry(entry: WatchlistEntry, strategy: str) -> dict:
 
     try:
         rows = degiro.load_candles(
-            ref.vwd_id, "1y-1d", vwd_identifier_type=ref.vwd_identifier_type
+            ref.vwd_id,
+            "1y-1d",
+            vwd_identifier_type=ref.vwd_identifier_type,
+            currency=ref.currency,
         )
     except Exception as exc:
         return {"entry": entry, "ref": ref, "error": f"candles fetch failed: {exc}"}
 
-    closes = [r.close for r in rows]
+    series = build_close_series(
+        rows,
+        vwd_id=ref.vwd_id,
+        vwd_identifier_type=ref.vwd_identifier_type,
+        currency=ref.currency,
+    )
 
     high_52w: float | None = None
     if ref.metadata_ok:
@@ -152,22 +161,43 @@ def _analyze_entry(entry: WatchlistEntry, strategy: str) -> dict:
         except Exception as exc:
             logger.warning("metadata fetch failed for %s: %s", ref.symbol, exc)
 
-    verdict = indicators.evaluate(strategy, closes, high_52w=high_52w)
-    return {"entry": entry, "ref": ref, "verdict": verdict}
+    verdict = indicators.evaluate(strategy, series.closes, high_52w=high_52w)
+    return {"entry": entry, "ref": ref, "verdict": verdict, "series": series}
+
+
+def _fmt_metric(metrics: dict, key: str, fmt: str = ".1f") -> str:
+    val = metrics.get(key)
+    if val is None:
+        return f"{key}=n/a"
+    return f"{key}={val:{fmt}}"
 
 
 def _render_verdict(item: dict) -> str:
     entry: WatchlistEntry = item["entry"]
     ref = item.get("ref")
     label = entry.label
-    if ref and ref.symbol:
-        label = f"{ref.symbol} ({entry.label})"
+    isin = (ref.isin if ref else None) or entry.query
     if "error" in item:
-        return f"- {label}: skipped — {item['error']}"
+        return f"- {label} [{isin}]: skipped — {item['error']}"
     verdict = item["verdict"]
+    series = item.get("series")
+    metrics = verdict.metrics or {}
+    metric_bits = " ".join(
+        [
+            _fmt_metric(metrics, "rsi14"),
+            _fmt_metric(metrics, "drawdown_52w_pct"),
+            _fmt_metric(metrics, "support_distance_pct"),
+            _fmt_metric(metrics, "var_1d_pct"),
+            _fmt_metric(metrics, "var_3d_pct"),
+        ]
+    )
     reasons = "; ".join(verdict.reasons) if verdict.reasons else "no signal"
+    bar_ts = series.last_bar_ts if series else "n/a"
+    provisional = bool(series and series.is_provisional)
     return (
-        f"- {label} | {verdict.signal} (score {verdict.score}) | {reasons}"
+        f"- {label} [{isin}] | {verdict.signal} score={verdict.score} | "
+        f"{metric_bits} | bar_ts={bar_ts} provisional={provisional} | "
+        f"reasons: {reasons}"
     )
 
 
@@ -175,9 +205,12 @@ def _render_verdict(item: dict) -> str:
     name="market_watch",
     description=(
         "Screen a watchlist for rebound or swing setups using Degiro close-only "
-        "daily data. Returns ranked candidates, rejects ('falling knives' for "
-        "rebound, trend breakdowns for swing) and neutrals. Use degiro_indicators "
-        "or degiro_candles to zoom into a single name."
+        "daily data. The latest intraday tick is grafted as a provisional bar "
+        "when the daily close isn't yet settled, so the result is current at "
+        "any hour. Returns ranked candidates, recoveries (rebounds already in "
+        "progress — out of scope for an entry), rejects ('falling knives' for "
+        "rebound, trend breakdowns for swing) and neutrals. Use "
+        "degiro_indicators or degiro_candles to zoom into a single name."
     ),
     parameters={
         "type": "object",
@@ -220,6 +253,11 @@ def market_watch(
         key=lambda r: r["verdict"].score,
         reverse=True,
     )[:max_candidates]
+    recoveries = sorted(
+        [r for r in results if "verdict" in r and r["verdict"].signal == "recovery"],
+        key=lambda r: r["verdict"].score,
+        reverse=True,
+    )
     rejects = [
         r for r in results if "verdict" in r and r["verdict"].signal == "reject"
     ]
@@ -228,8 +266,15 @@ def market_watch(
     ]
     errors = [r for r in results if "error" in r]
 
+    series_items = [r.get("series") for r in results if r.get("series")]
+    provisional_count = sum(1 for s in series_items if s and s.is_provisional)
+    last_bar_max = max(
+        (s.last_bar_ts for s in series_items if s and s.last_bar_ts), default="n/a"
+    )
+
     lines = [
         f"Market watch — strategy={strategy} | group={group_name} | entries={len(entries)}",
+        f"Freshness: last_bar_max={last_bar_max} | provisional={provisional_count}/{len(series_items)}",
         "",
         f"Candidates ({len(candidates)}):",
     ]
@@ -237,6 +282,14 @@ def market_watch(
         lines.extend(_render_verdict(r) for r in candidates)
     else:
         lines.append("- none")
+
+    if strategy == "rebound":
+        lines.append("")
+        lines.append(f"Recovery — already rebounding ({len(recoveries)}):")
+        if recoveries:
+            lines.extend(_render_verdict(r) for r in recoveries[:max_candidates])
+        else:
+            lines.append("- none")
 
     label = "Falling knives" if strategy == "rebound" else "Trend breakdowns"
     lines.append("")

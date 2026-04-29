@@ -7,6 +7,7 @@ has no order-placement methods (see my-agent/vendor/degiro_client/VENDORED.md).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from agent import degiro, indicators
@@ -26,6 +27,80 @@ def _fmt_pct(value: float | None) -> str:
     if value is None:
         return "n/a"
     return f"{value:+.1f}%"
+
+
+@dataclass
+class CloseSeries:
+    closes: list[float]
+    last_bar_ts: str
+    is_provisional: bool
+
+
+def _latest_intraday_close(
+    vwd_id: str, vwd_identifier_type: str | None
+) -> tuple[float | None, str | None]:
+    """Return (close, ts_iso) of the most recent 10-minute intraday tick, or
+    (None, None) if intraday data isn't available."""
+    try:
+        rows = degiro.load_candles(
+            vwd_id,
+            "today-10m",
+            vwd_identifier_type=vwd_identifier_type,
+        )
+    except Exception as exc:
+        logger.warning("intraday fetch failed for vwd_id=%s: %s", vwd_id, exc)
+        return None, None
+    if not rows:
+        return None, None
+    return rows[-1].close, rows[-1].ts
+
+
+def build_close_series(
+    rows: list[degiro.CandleRow],
+    *,
+    vwd_id: str,
+    vwd_identifier_type: str | None,
+    currency: str | None,
+    now: datetime | None = None,
+) -> CloseSeries:
+    """Build a chronological close series from cached daily rows. If the latest
+    cached bar is older than today (or today's bar isn't settled yet), graft
+    the most recent intraday close as a provisional last point so the
+    indicators reflect the live market view at any hour of day. The `now`
+    argument is only used by tests."""
+    closes = [r.close for r in rows]
+    if not rows:
+        return CloseSeries(closes=closes, last_bar_ts="", is_provisional=False)
+
+    last_ts_iso = rows[-1].ts
+    last_dt = datetime.fromisoformat(last_ts_iso.replace("Z", "+00:00"))
+    paris_now = (now or datetime.now(degiro.PARIS_TZ)).astimezone(degiro.PARIS_TZ)
+    today_paris = paris_now.date()
+    last_is_today = last_dt.astimezone(degiro.PARIS_TZ).date() == today_paris
+    settled = degiro.is_today_bar_settled(currency, now=paris_now)
+
+    if last_is_today and settled:
+        return CloseSeries(closes=closes, last_bar_ts=last_ts_iso, is_provisional=False)
+
+    intraday_close, intraday_ts = _latest_intraday_close(vwd_id, vwd_identifier_type)
+    if intraday_close is None:
+        # No intraday data available — return cached series as-is, but flag it
+        # provisional if today's bar is in cache without settle confirmation.
+        return CloseSeries(
+            closes=closes,
+            last_bar_ts=last_ts_iso,
+            is_provisional=last_is_today and not settled,
+        )
+
+    if last_is_today:
+        closes[-1] = intraday_close
+    else:
+        closes.append(intraday_close)
+    return CloseSeries(
+        closes=closes,
+        last_bar_ts=intraday_ts or last_ts_iso,
+        is_provisional=True,
+    )
 
 
 def _fmt_ts(iso: str | None) -> str:
@@ -283,7 +358,10 @@ def degiro_candles(
         return f"Error: no usable price history for {query!r}."
 
     rows = degiro.load_candles(
-        ref.vwd_id, window, vwd_identifier_type=ref.vwd_identifier_type
+        ref.vwd_id,
+        window,
+        vwd_identifier_type=ref.vwd_identifier_type,
+        currency=ref.currency,
     )
     if not rows:
         return f"No candles returned for {query!r} on window {window}."
@@ -308,8 +386,11 @@ def degiro_candles(
     description=(
         "Structured verdict for a rebound or swing setup on a single security, "
         "computed close-only (Degiro does not expose OHLV). Fetches ~1y of daily "
-        "closes and, for swing, requires ≥210 closes (SMA200). Returns a signal "
-        "(candidate / neutral / reject), score, reasons and raw metrics."
+        "closes and, for swing, requires ≥210 closes (SMA200). Outside market "
+        "hours and on intra-session calls, the latest intraday tick is grafted "
+        "as a provisional last bar so the verdict reflects the live view. "
+        "Returns a signal (candidate / recovery / neutral / reject), score, "
+        "reasons, raw metrics and a freshness flag (bar_ts + provisional)."
     ),
     parameters={
         "type": "object",
@@ -339,9 +420,17 @@ def degiro_indicators(query: str, strategy: str) -> str:
         )
 
     rows = degiro.load_candles(
-        ref.vwd_id, "1y-1d", vwd_identifier_type=ref.vwd_identifier_type
+        ref.vwd_id,
+        "1y-1d",
+        vwd_identifier_type=ref.vwd_identifier_type,
+        currency=ref.currency,
     )
-    closes = [r.close for r in rows]
+    series = build_close_series(
+        rows,
+        vwd_id=ref.vwd_id,
+        vwd_identifier_type=ref.vwd_identifier_type,
+        currency=ref.currency,
+    )
 
     high_52w: float | None = None
     if ref.metadata_ok:
@@ -353,11 +442,12 @@ def degiro_indicators(query: str, strategy: str) -> str:
         except Exception as exc:
             logger.warning("metadata fetch failed during indicators: %s", exc)
 
-    verdict = indicators.evaluate(strategy, closes, high_52w=high_52w)
+    verdict = indicators.evaluate(strategy, series.closes, high_52w=high_52w)
 
     label = ref.symbol or ref.isin or query
     lines = [
         f"{label} — strategy={strategy} signal={verdict.signal} score={verdict.score}",
+        f"bar_ts={series.last_bar_ts} provisional={series.is_provisional}",
     ]
     for reason in verdict.reasons:
         lines.append(f"- {reason}")
