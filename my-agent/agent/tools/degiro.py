@@ -642,11 +642,23 @@ async def degiro_chart(
 # ---------------------------------------------------------------------------
 
 
-def _label_open_order(o, products: dict[str, str] | None = None) -> str:
-    label = (products or {}).get(o.product_id, o.product_id)
+def _resolve_product_names(product_ids: list[str]) -> dict[str, str]:
+    ids = sorted({pid for pid in product_ids if pid})
+    if not ids:
+        return {}
+    try:
+        products = degiro.get_client().get_products_by_ids(ids)
+    except Exception as exc:
+        logger.warning("get_products_by_ids failed: %s", exc)
+        return {}
+    return {pid: (p.name or p.symbol or pid) for pid, p in products.items()}
+
+
+def _label_open_order(o, names: dict[str, str] | None = None) -> str:
+    name = (names or {}).get(o.product_id) or o.product_id
     side = (o.buy_sell or "").upper()
     price = f"{o.price:.4f}" if o.price is not None else "n/a"
-    return f"{side} {o.size:g} {label} @ {price}"
+    return f"{side} {o.size:g} {name} @ {price}"
 
 
 async def degiro_propose_order(
@@ -713,12 +725,12 @@ async def degiro_list_open_orders() -> str:
         return f"Error: lecture des ordres echouee ({exc})."
     if not open_orders:
         return "Aucun ordre ouvert."
+    names = await asyncio.to_thread(
+        _resolve_product_names, [o.product_id for o in open_orders]
+    )
     lines = ["Ordres ouverts:"]
     for o in open_orders:
-        lines.append(
-            f"- orderId={o.order_id} | productId={o.product_id} | "
-            f"{_label_open_order(o)}"
-        )
+        lines.append(f"- {_label_open_order(o, names)} (orderId={o.order_id})")
     return "\n".join(lines)
 
 
@@ -742,7 +754,8 @@ async def degiro_propose_cancel(
     if target is None:
         return f"Error: orderId {order_id!r} introuvable parmi les ordres ouverts."
 
-    label = _label_open_order(target)
+    names = await asyncio.to_thread(_resolve_product_names, [target.product_id])
+    label = _label_open_order(target, names)
     try:
         pending_id, preview = await asyncio.to_thread(
             orders.create_pending_cancel,
