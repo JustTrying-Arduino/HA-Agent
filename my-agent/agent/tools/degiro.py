@@ -728,9 +728,11 @@ async def degiro_list_open_orders() -> str:
     names = await asyncio.to_thread(
         _resolve_product_names, [o.product_id for o in open_orders]
     )
-    lines = ["Ordres ouverts:"]
+    lines = [
+        "Ordres ouverts (orderId reserve aux tool calls, ne pas afficher a l'utilisateur):",
+    ]
     for o in open_orders:
-        lines.append(f"- {_label_open_order(o, names)} (orderId={o.order_id})")
+        lines.append(f"- {_label_open_order(o, names)} [orderId={o.order_id}]")
     return "\n".join(lines)
 
 
