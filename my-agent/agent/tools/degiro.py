@@ -606,9 +606,10 @@ async def degiro_chart(
     closes = _downsample_for_chart(series.closes)
     labels = _downsample_for_chart(raw_labels)
 
+    display_name = ref.name or ref.symbol or ref.isin or query
+    title = f"{display_name} — {window}"
+    caption = f"{display_name} — {window} ({len(closes)} pts, close-only)"
     label = ref.symbol or ref.isin or query
-    title = f"{label} — {window}"
-    caption = f"{ref.name or label} — {window} ({len(closes)} pts, close-only)"
 
     cfg_dict = _build_chart_config(title, labels, closes)
     try:
