@@ -55,6 +55,7 @@ export BRAVE_API_KEY="$(get_option 'brave_api_key')"
 export DEGIRO_USERNAME="$(get_option 'degiro_username')"
 export DEGIRO_PASSWORD="$(get_option 'degiro_password')"
 export DEGIRO_TOTP_SEED="$(get_option 'degiro_totp_seed')"
+export DEGIRO_ORDERS_ENABLED="$(get_option 'degiro_orders_enabled' 'false')"
 export DEGIRO_DATA_DIR="/data/degiro"
 mkdir -p "${DEGIRO_DATA_DIR}"
 if [ ! -f "${DEGIRO_DATA_DIR}/.key" ]; then

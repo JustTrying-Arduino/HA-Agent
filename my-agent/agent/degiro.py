@@ -122,6 +122,29 @@ def get_client() -> DegiroClient:
     return _client
 
 
+def place_limit_gtc(
+    *, product_id: str, buy_sell: str, size: float, limit_price: float
+) -> str:
+    """Place a LIMIT, GTC ('PERMANENT') order. Returns the Degiro orderId."""
+    client = get_client()
+    return client.place_order(
+        product_id=str(product_id),
+        buy_sell=buy_sell,
+        size=float(size),
+        order_type="LIMITED",
+        time_type="PERMANENT",
+        price=float(limit_price),
+    )
+
+
+def cancel_order(order_id: str) -> None:
+    get_client().cancel_order(str(order_id))
+
+
+def list_open_orders() -> list:
+    return get_client().get_orders(historical=False)
+
+
 def is_today_bar_settled(currency: str | None, *, now: datetime | None = None) -> bool:
     """Return True if today's official close for `currency`'s primary market
     is published and stable. Heuristic by currency: USD → NYSE/NASDAQ

@@ -15,6 +15,7 @@ class Config:
     degiro_username: str = ""
     degiro_password: str = ""
     degiro_totp_seed: str = ""
+    degiro_orders_enabled: bool = False
     telegram_bot_token: str = ""
     telegram_allowed_chat_ids: list[int] = field(default_factory=list)
     session_timeout_hours: int = 48
@@ -45,6 +46,7 @@ class Config:
             degiro_username=os.environ.get("DEGIRO_USERNAME", ""),
             degiro_password=os.environ.get("DEGIRO_PASSWORD", ""),
             degiro_totp_seed=os.environ.get("DEGIRO_TOTP_SEED", ""),
+            degiro_orders_enabled=os.environ.get("DEGIRO_ORDERS_ENABLED", "false").lower() == "true",
             telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN", ""),
             telegram_allowed_chat_ids=chat_ids,
             session_timeout_hours=int(os.environ.get("SESSION_TIMEOUT_HOURS", "48")),

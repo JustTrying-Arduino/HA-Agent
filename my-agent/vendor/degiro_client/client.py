@@ -1,8 +1,10 @@
-"""Public facade: one DegiroClient instance exposes everything read-only.
+"""Public facade: one DegiroClient instance exposes Degiro account operations.
 
-This vendored copy intentionally omits order-placement methods
-(place_order, check_order, confirm_order, cancel_order) so HA-Agent can
-never place a trade, even under prompt injection. See VENDORED.md.
+Order-placement methods (place_order, check_order, confirm_order,
+cancel_order) are exposed here. The HA-Agent safety net for human-in-the-loop
+trading lives at the application layer (pending_actions table + Telegram
+inline-keyboard callback + per-action guards), not at the vendor level. See
+VENDORED.md for details.
 
 Typical usage:
 
@@ -80,6 +82,60 @@ class DegiroClient:
 
     def get_orders(self, *, historical: bool = False) -> list[Order]:
         return orders.get_orders(self._http, self._session, historical=historical)
+
+    def check_order(
+        self,
+        *,
+        product_id: str,
+        buy_sell: str,
+        size: float,
+        order_type: str | int,
+        time_type: str | int = "DAY",
+        price: float | None = None,
+        stop_price: float | None = None,
+    ) -> dict[str, Any]:
+        return orders.check_order(
+            self._http,
+            self._session,
+            product_id=product_id,
+            buy_sell=buy_sell,
+            size=size,
+            order_type=order_type,
+            time_type=time_type,
+            price=price,
+            stop_price=stop_price,
+        )
+
+    def confirm_order(self, *, confirmation_id: str, body: dict[str, Any]) -> str:
+        return orders.confirm_order(
+            self._http, self._session, confirmation_id=confirmation_id, body=body
+        )
+
+    def place_order(
+        self,
+        *,
+        product_id: str,
+        buy_sell: str,
+        size: float,
+        order_type: str | int,
+        time_type: str | int = "DAY",
+        price: float | None = None,
+        stop_price: float | None = None,
+    ) -> str:
+        return orders.place_order(
+            self._http,
+            self._session,
+            product_id=product_id,
+            buy_sell=buy_sell,
+            size=size,
+            order_type=order_type,
+            time_type=time_type,
+            price=price,
+            stop_price=stop_price,
+        )
+
+    def cancel_order(self, order_id: str) -> None:
+        orders.cancel_order(self._http, self._session, order_id)
 
     def price_now(
         self, vwd_id: str, vwd_identifier_type: str | None = None

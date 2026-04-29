@@ -112,6 +112,26 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_degiro_prices_vwd_res_ts
             ON degiro_prices (vwd_id, resolution, ts DESC);
 
+        CREATE TABLE IF NOT EXISTS pending_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            preview_text TEXT NOT NULL,
+            status TEXT NOT NULL,
+            telegram_message_id INTEGER,
+            result_text TEXT,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            resolved_at TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pending_actions_status_expires
+            ON pending_actions(status, expires_at);
+
+        CREATE INDEX IF NOT EXISTS idx_pending_actions_chat_action_resolved
+            ON pending_actions(chat_id, action, resolved_at);
+
         DROP TABLE IF EXISTS market_eod_prices;
         DROP TABLE IF EXISTS market_api_usage;
     """)

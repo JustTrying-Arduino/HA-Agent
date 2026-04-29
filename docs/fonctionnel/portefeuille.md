@@ -4,7 +4,7 @@
 
 L'agent HA lit le portefeuille Degiro de l'utilisateur (positions, cash, P&L jour et cumulatif) via la bibliotheque `degiro_client` vendored dans `my-agent/vendor/degiro_client/`. Il propose des observations cadrees par seuils via le skill `portfolio-advisor`.
 
-**Garde-fou fondamental**: l'agent **ne peut pas passer d'ordre**. Les methodes d'ordre (`place_order`, `check_order`, `confirm_order`, `cancel_order`) sont **physiquement retirees** du client vendored. Meme sous prompt injection, l'appel n'existe pas.
+**Lecture seule par defaut.** Les tools de cette page ne passent jamais d'ordre. Le passage et l'annulation d'ordres sur Degiro sont possibles via le flow human-in-the-loop decrit dans [`ordres-degiro.md`](./ordres-degiro.md), gate par `cfg.degiro_orders_enabled` et confirme par bouton inline Telegram. La defense en profondeur n'est plus au niveau du vendor mais au niveau applicatif (table `pending_actions`, garde-fous deterministes, callback hors boucle LLM).
 
 ## Authentification
 
@@ -70,12 +70,12 @@ Workspace: `skills/portfolio-advisor/SKILL.md`. Ton **factuel + suggestions cadr
 - pas de price target;
 - pas d'allocation cible en pourcentage.
 
-Disclaimer systematique en fin de reponse: "Ces observations ne sont pas un conseil en investissement. L'agent ne peut pas passer d'ordre."
+Disclaimer systematique en fin de reponse: "Ces observations ne sont pas un conseil en investissement. Tout ordre passe par confirmation explicite via Telegram."
 
 ## Vendoring
 
 - Code copie depuis `Degiro-API` dans `my-agent/vendor/degiro_client/`.
-- Les methodes d'ordre sont retirees a la main dans `client.py` et `orders.py` de la copie vendored.
+- Les methodes d'ordre (`place_order`, `check_order`, `confirm_order`, `cancel_order`) sont alignees upstream et exposees par `DegiroClient`. La protection est applicative (cf. [`ordres-degiro.md`](./ordres-degiro.md)), pas vendor.
 - `my-agent/vendor/degiro_client/VENDORED.md` documente le commit source, les limitations (close-only, `P1W` -> `P7D`), et la procedure de resync.
 
 ## Dependances runtime
@@ -89,6 +89,6 @@ Dans le `Dockerfile`: `COPY vendor/ /opt/vendor/` et `PYTHONPATH=/opt:/opt/vendo
 
 ## Points d'attention
 
-- Toute evolution de la famille `degiro_*` ou du skill `portfolio-advisor` doit aussi mettre a jour `tools.md`, `veille-boursiere.md`, et le skill `market-watch` si les indicateurs changent.
-- Toute resync du client vendored doit mettre a jour `VENDORED.md` (commit hash) et reverifier que les methodes d'ordre restent retirees.
+- Toute evolution de la famille `degiro_*` ou du skill `portfolio-advisor` doit aussi mettre a jour `tools.md`, `veille-boursiere.md`, `ordres-degiro.md`, et le skill `market-watch` si les indicateurs changent.
+- Toute resync du client vendored doit mettre a jour `VENDORED.md` (commit hash) et reverifier que les methodes d'ordre restent presentes (le flow human-in-the-loop en a besoin).
 - Aucun secret (credentials, session_id, user_token) ne doit apparaitre dans les logs.

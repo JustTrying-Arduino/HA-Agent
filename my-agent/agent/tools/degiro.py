@@ -1,18 +1,24 @@
-"""Tools: Degiro portfolio / search / quote / candles / indicators / chart.
+"""Tools: Degiro portfolio / search / quote / candles / indicators / chart / orders.
 
-All tools are READ-ONLY by construction — the vendored degiro_client copy
-has no order-placement methods (see my-agent/vendor/degiro_client/VENDORED.md).
+Read tools are always exposed when Degiro credentials are set. The three
+order tools (`degiro_propose_order`, `degiro_list_open_orders`,
+`degiro_propose_cancel`) are gated by `cfg.degiro_orders_enabled` and rely on
+the human-in-the-loop flow described in `docs/fonctionnel/ordres-degiro.md`:
+the LLM proposes a row in `pending_actions`, only a Telegram inline-button
+callback executes the order against Degiro.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
 
-from agent import degiro, indicators, telegram as telegram_dispatch
+from agent import degiro, indicators, orders, telegram as telegram_dispatch
+from agent.config import cfg
 from agent.tools import register
 
 logger = logging.getLogger(__name__)
@@ -625,3 +631,206 @@ async def degiro_chart(
         return f"Error: chart rendered but Telegram send failed ({exc.__class__.__name__}). URL: {url}"
 
     return f"Graphique envoye: {label} sur {window} ({len(closes)} points)."
+
+
+# ---------------------------------------------------------------------------
+# Order tools (gated by cfg.degiro_orders_enabled).
+# Execution never happens here: these tools only insert a pending_actions row
+# and ask Telegram to display the inline ✅/❌ confirmation. The actual call
+# to Degiro is made by `agent.telegram.handle_order_callback` after the user
+# clicks ✅.
+# ---------------------------------------------------------------------------
+
+
+def _label_open_order(o, products: dict[str, str] | None = None) -> str:
+    label = (products or {}).get(o.product_id, o.product_id)
+    side = (o.buy_sell or "").upper()
+    price = f"{o.price:.4f}" if o.price is not None else "n/a"
+    return f"{side} {o.size:g} {label} @ {price}"
+
+
+async def degiro_propose_order(
+    query: str,
+    side: str,
+    size: float,
+    limit_price: float,
+    _context: dict | None = None,
+) -> str:
+    if not degiro.degiro_available():
+        return "Error: Degiro is not configured."
+    if not cfg.degiro_orders_enabled:
+        return "Error: degiro_orders_enabled est false. Activez le kill switch en configuration."
+    chat_id = (_context or {}).get("chat_id")
+    if chat_id is None:
+        return "Error: ce tool ne peut etre appele que depuis un chat Telegram."
+
+    try:
+        ref = await asyncio.to_thread(degiro.resolve_product, query)
+    except Exception as exc:
+        return f"Error: produit introuvable pour {query!r} ({exc})."
+    if not ref.product_id:
+        return f"Error: pas de productId Degiro pour {query!r}."
+
+    label = ref.symbol or ref.isin or ref.name or query
+    try:
+        pending_id, preview = await asyncio.to_thread(
+            orders.create_pending_place,
+            chat_id=int(chat_id),
+            product_id=str(ref.product_id),
+            isin=ref.isin,
+            label=label,
+            side=side,
+            size=float(size),
+            limit_price=float(limit_price),
+            currency=ref.currency,
+        )
+    except orders.OrderGuardError as exc:
+        return f"Refus garde-fou : {exc}"
+    except Exception as exc:
+        logger.exception("create_pending_place failed")
+        return f"Error: insertion pending_actions echouee ({exc})."
+
+    try:
+        await telegram_dispatch.send_order_confirmation(int(chat_id), pending_id, preview)
+    except Exception as exc:
+        logger.exception("send_order_confirmation failed pending_id=%s", pending_id)
+        return f"Error: pending #{pending_id} insere mais envoi Telegram echoue ({exc})."
+
+    return (
+        f"Demande #{pending_id} envoyee sur Telegram. "
+        f"Expire dans {orders.TTL_MINUTES} min. La confirmation se fait via les "
+        "boutons du message; je n'attends pas de reponse."
+    )
+
+
+async def degiro_list_open_orders() -> str:
+    if not degiro.degiro_available():
+        return "Error: Degiro is not configured."
+    try:
+        open_orders = await asyncio.to_thread(degiro.list_open_orders)
+    except Exception as exc:
+        logger.exception("list_open_orders failed")
+        return f"Error: lecture des ordres echouee ({exc})."
+    if not open_orders:
+        return "Aucun ordre ouvert."
+    lines = ["Ordres ouverts:"]
+    for o in open_orders:
+        lines.append(
+            f"- orderId={o.order_id} | productId={o.product_id} | "
+            f"{_label_open_order(o)}"
+        )
+    return "\n".join(lines)
+
+
+async def degiro_propose_cancel(
+    order_id: str,
+    _context: dict | None = None,
+) -> str:
+    if not degiro.degiro_available():
+        return "Error: Degiro is not configured."
+    if not cfg.degiro_orders_enabled:
+        return "Error: degiro_orders_enabled est false."
+    chat_id = (_context or {}).get("chat_id")
+    if chat_id is None:
+        return "Error: ce tool ne peut etre appele que depuis un chat Telegram."
+
+    try:
+        open_orders = await asyncio.to_thread(degiro.list_open_orders)
+    except Exception as exc:
+        return f"Error: lecture des ordres echouee ({exc})."
+    target = next((o for o in open_orders if str(o.order_id) == str(order_id)), None)
+    if target is None:
+        return f"Error: orderId {order_id!r} introuvable parmi les ordres ouverts."
+
+    label = _label_open_order(target)
+    try:
+        pending_id, preview = await asyncio.to_thread(
+            orders.create_pending_cancel,
+            chat_id=int(chat_id),
+            order_id=str(order_id),
+            label=label,
+        )
+    except orders.OrderGuardError as exc:
+        return f"Refus garde-fou : {exc}"
+    except Exception as exc:
+        logger.exception("create_pending_cancel failed")
+        return f"Error: insertion pending_actions echouee ({exc})."
+
+    try:
+        await telegram_dispatch.send_order_confirmation(int(chat_id), pending_id, preview)
+    except Exception as exc:
+        logger.exception("send_order_confirmation failed pending_id=%s", pending_id)
+        return f"Error: pending #{pending_id} insere mais envoi Telegram echoue ({exc})."
+
+    return (
+        f"Demande d'annulation #{pending_id} envoyee. "
+        f"Expire dans {orders.TTL_MINUTES} min."
+    )
+
+
+if cfg.degiro_orders_enabled:
+    register(
+        name="degiro_propose_order",
+        description=(
+            "Propose un ordre d'achat ou de vente sur Degiro. N'execute RIEN : "
+            "la fonction insere une ligne pending_actions et envoie un message "
+            "Telegram avec deux boutons (Confirmer / Annuler). Seul le clic sur "
+            "Confirmer passe l'ordre. Type d'ordre fixe a LIMIT, validite GTC "
+            "(continu). Garde-fous : kill switch global, plafond 1500 EUR par "
+            "BUY, quota 4 BUY confirmes par fenetre glissante de 24h, TTL "
+            "pending de 5 min."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "ISIN (preferred), symbol or name to resolve via Degiro.",
+                },
+                "side": {
+                    "type": "string",
+                    "enum": ["BUY", "SELL"],
+                    "description": "BUY ou SELL.",
+                },
+                "size": {
+                    "type": "number",
+                    "description": "Quantite (nombre d'actions).",
+                },
+                "limit_price": {
+                    "type": "number",
+                    "description": "Prix limite par action.",
+                },
+            },
+            "required": ["query", "side", "size", "limit_price"],
+        },
+    )(degiro_propose_order)
+
+    register(
+        name="degiro_list_open_orders",
+        description=(
+            "Liste les ordres ouverts (non encore executes ni annules) sur "
+            "Degiro. Lecture seule. Renvoie pour chaque ordre : orderId, sens, "
+            "taille, prix limite, productId."
+        ),
+        parameters={"type": "object", "properties": {}, "required": []},
+    )(degiro_list_open_orders)
+
+    register(
+        name="degiro_propose_cancel",
+        description=(
+            "Propose l'annulation d'un ordre Degiro ouvert (par orderId). "
+            "Comme degiro_propose_order, l'annulation n'est PAS effectuee ici : "
+            "un message Telegram avec boutons Confirmer/Annuler est envoye, et "
+            "seul le clic Confirmer transmet la cancellation a Degiro."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "order_id": {
+                    "type": "string",
+                    "description": "Identifiant Degiro de l'ordre a annuler (cf. degiro_list_open_orders).",
+                },
+            },
+            "required": ["order_id"],
+        },
+    )(degiro_propose_cancel)

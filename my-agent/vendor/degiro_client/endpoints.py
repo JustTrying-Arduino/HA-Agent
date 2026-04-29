@@ -1,8 +1,8 @@
 """Degiro endpoint constants.
 
-Vendored read-only. Order-related endpoints (CHECK_ORDER_PATH, ORDER_PATH,
-ORDER_ACTIONS, ORDER_TYPES, TIME_TYPES) are kept as constants but nothing
-in this vendored copy calls them.
+Values sourced from github.com/icastillejogomez/degiro-api (src/enums/DeGiroEnums.ts).
+The dynamic URLs (tradingUrl, paUrl, productSearchUrl) are returned by
+GET /login/secure/config after login - we don't hardcode them here.
 """
 
 BASE_URL = "https://trader.degiro.nl/"
@@ -14,6 +14,8 @@ CONFIG_PATH = "login/secure/config"
 
 ACCOUNT_INFO_PATH = "v5/account/info/"
 UPDATE_PATH = "v5/update/"
+CHECK_ORDER_PATH = "v5/checkOrder"
+ORDER_PATH = "v5/order/"
 
 PRODUCTS_LOOKUP_PATH = "v5/products/lookup"
 PRODUCTS_INFO_PATH = "v5/products/info"
@@ -30,6 +32,10 @@ USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
+
+ORDER_ACTIONS = {"BUY": "BUY", "SELL": "SELL"}
+ORDER_TYPES = {"LIMITED": 0, "STOP_LIMITED": 1, "MARKET": 2, "STOP_LOSS": 3}
+TIME_TYPES = {"DAY": 1, "PERMANENT": 3}
 
 PRODUCT_TYPES = {
     "shares": 1,

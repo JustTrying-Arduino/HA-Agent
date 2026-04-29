@@ -24,7 +24,8 @@ Cette documentation décrit le fonctionnement du projet pour les IA et les déve
 | [`tools.md`](./tools.md) | Pour ajouter ou modifier des tools, leurs règles d'exposition, leurs limites et leur exécution. |
 | [`sub-agents.md`](./sub-agents.md) | Pour les boucles LLM imbriquées (sub-agents) déclenchées par certains tools, leur toolset restreint et leur observabilité. |
 | [`veille-boursiere.md`](./veille-boursiere.md) | Pour le suivi boursier via Degiro (close-only), le cache local, la watchlist ISIN-first et les stratégies rebond / swing. |
-| [`portefeuille.md`](./portefeuille.md) | Pour la lecture du portefeuille Degiro, le skill `portfolio-advisor`, la règle « jamais d'ordre » et les limitations close-only. |
+| [`portefeuille.md`](./portefeuille.md) | Pour la lecture du portefeuille Degiro, le skill `portfolio-advisor` et les limitations close-only. |
+| [`ordres-degiro.md`](./ordres-degiro.md) | Pour le passage et l'annulation d'ordres Degiro via Telegram (human-in-the-loop), les garde-fous déterministes et le kill switch `degiro_orders_enabled`. |
 | [`workspace-et-memoire.md`](./workspace-et-memoire.md) | Pour les fichiers workspace, la mémoire durable, les skills et leur cycle de vie. |
 
 ## Frontière avec les autres docs

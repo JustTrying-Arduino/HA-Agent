@@ -1,6 +1,6 @@
 # Vendored `degiro_client`
 
-Read-only copy of [Degiro-API](../../../../../Degiro-API) synchronisee a la main.
+Copie alignee sur [Degiro-API](../../../../../Degiro-API) synchronisee a la main.
 Source: `Degiro-API/src/degiro_client/` (workspace local).
 
 ## Raison du vendoring
@@ -13,11 +13,13 @@ l'image se construise sans dependance externe.
 
 - `__main__.py`, `cli.py`, `totp_migration.py` **non copies** (utilitaires CLI
   inutiles au runtime add-on).
-- `client.py` et `orders.py` **strippes** des methodes qui permettent de passer
-  des ordres (`place_order`, `check_order`, `confirm_order`, `cancel_order`).
-  Defense en profondeur : meme si une prompt injection tentait
-  `client.place_order(...)`, la methode n'existe simplement pas.
-- `get_orders()` (lecture de l'historique) est **conserve**.
+- `client.py` et `orders.py` exposent `place_order`, `check_order`,
+  `confirm_order`, `cancel_order` (alignes upstream). La defense en
+  profondeur n'est plus au niveau du vendor : elle est faite cote
+  application via la table `pending_actions`, le callback inline-keyboard
+  Telegram et les garde-fous deterministes (chat_id autorise, kill switch
+  `cfg.degiro_orders_enabled`, TTL 5 min, plafond 1500 EUR sur BUY, quota
+  rolling 24h sur BUY). Voir `docs/fonctionnel/ordres-degiro.md`.
 
 ## Limitations connues du backend Degiro
 
@@ -40,12 +42,11 @@ l'image se construise sans dependance externe.
 
 1. `cp -r Degiro-API/src/degiro_client/ HA-Agent/my-agent/vendor/degiro_client/`
 2. Supprimer `__main__.py`, `cli.py`, `totp_migration.py`.
-3. Retirer de `client.py` : `place_order`, `check_order`, `confirm_order`,
-   `cancel_order` (methodes de l'instance).
-4. Retirer de `orders.py` : fonctions `check_order`, `confirm_order`,
-   `place_order`, `cancel_order`. Conserver `get_orders` et `_unflatten`
-   utilise par `portfolio.py`.
-5. Mettre a jour la section "Commit source" ci-dessous.
+3. Verifier que `client.py` et `orders.py` exposent toujours les methodes
+   d'ordre (`place_order`, `check_order`, `confirm_order`, `cancel_order`)
+   et que les constantes d'`endpoints.py` (`CHECK_ORDER_PATH`, `ORDER_PATH`,
+   `ORDER_ACTIONS`, `ORDER_TYPES`, `TIME_TYPES`) sont presentes.
+4. Mettre a jour la section "Commit source" ci-dessous.
 
 ## Commit source
 
