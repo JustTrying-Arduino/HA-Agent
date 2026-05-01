@@ -1,6 +1,6 @@
 name: "My Agent"
 description: "Minimalist AI agent with Telegram interface and tool execution"
-version: "0.5.0"
+version: "0.5.1"
 slug: "my-agent"
 url: "https://github.com/home-assistant/addons-example"
 
@@ -15,7 +15,7 @@ homeassistant_api: true
 
 ingress: true
 ingress_port: 8099
-panel_icon: "mdi:robot"
+panel_icon: "mdi:message-star"
 panel_title: "My Agent"
 
 map:
