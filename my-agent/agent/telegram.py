@@ -7,18 +7,16 @@ import tempfile
 import logging
 import re
 
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Bot, Update
 from telegram.constants import ParseMode
 from telegram.error import NetworkError, TimedOut
 from telegram.ext import (
     Application,
-    CallbackQueryHandler,
     ContextTypes,
     MessageHandler,
     filters,
 )
 
-from agent import orders
 from agent.config import cfg
 from agent.loop import run_agent
 from agent.tools.audio import transcribe_audio
@@ -39,12 +37,10 @@ STATUS_TOOLS = {
     "web_search",
     "web_fetch",
     "web_research",
-    "market_watch",
     "exec",
     "ha_search_entities",
     "ha_get_state",
     "ha_call_service",
-    "degiro_chart",
 }
 TOOL_STATUS_LABELS = {
     "read_file": "Lecture de fichier...",
@@ -54,7 +50,6 @@ TOOL_STATUS_LABELS = {
     "web_search": "Recherche web...",
     "web_fetch": "Lecture d'une page web...",
     "web_research": "Recherche web approfondie...",
-    "market_watch": "Analyse boursiere...",
     "exec": "Execution d'une commande...",
     "ha_search_entities": "Recherche dans Home Assistant...",
     "ha_get_state": "Lecture Home Assistant...",
@@ -63,13 +58,7 @@ TOOL_STATUS_LABELS = {
     "list_reminders": "Consultation des rappels...",
     "update_reminder": "Mise a jour du rappel...",
     "cancel_reminder": "Annulation du rappel...",
-    "degiro_chart": "Generation du graphique...",
-    "degiro_propose_order": "Demande de confirmation d'ordre...",
-    "degiro_list_open_orders": "Lecture des ordres en cours...",
-    "degiro_propose_cancel": "Demande de confirmation d'annulation...",
 }
-
-ORDER_CALLBACK_PATTERN = re.compile(r"^order:(ok|no):(\d+)$")
 
 
 TRANSIENT_NETWORK_ERRORS = (TimedOut, NetworkError)
@@ -97,84 +86,9 @@ def start_bot() -> Application:
         .build()
     )
     app.add_handler(MessageHandler(filters.TEXT | filters.VOICE | filters.AUDIO, handle_message))
-    app.add_handler(
-        CallbackQueryHandler(handle_order_callback, pattern=ORDER_CALLBACK_PATTERN)
-    )
     app.add_error_handler(_on_telegram_error)
     _bot = app.bot
     return app
-
-
-async def send_photo(chat_id: int, photo: str, caption: str | None = None) -> None:
-    """Send a photo (URL or file_id) to the given chat. Used by tools that
-    produce visual output (e.g. degiro_chart)."""
-    if _bot is None:
-        raise RuntimeError("Telegram bot not initialized — call start_bot() first.")
-    await _call_with_transient_retry(
-        lambda: _bot.send_photo(chat_id=chat_id, photo=photo, caption=caption),
-        "Failed to send Telegram photo",
-    )
-
-
-def _order_confirmation_markup(pending_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("Confirmer", callback_data=f"order:ok:{pending_id}"),
-        InlineKeyboardButton("Annuler", callback_data=f"order:no:{pending_id}"),
-    ]])
-
-
-async def send_order_confirmation(chat_id: int, pending_id: int, preview_text: str) -> int:
-    """Send the inline ✅/❌ prompt for a pending order action and persist the
-    resulting message_id on the row. Returns the Telegram message_id."""
-    if _bot is None:
-        raise RuntimeError("Telegram bot not initialized — call start_bot() first.")
-    message = await _call_with_transient_retry(
-        lambda: _bot.send_message(
-            chat_id=chat_id,
-            text=preview_text,
-            reply_markup=_order_confirmation_markup(pending_id),
-        ),
-        "Failed to send Telegram order confirmation",
-    )
-    await asyncio.to_thread(orders.attach_telegram_message, pending_id, message.message_id)
-    return message.message_id
-
-
-async def handle_order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.callback_query
-    if query is None or not query.data:
-        return
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    if chat_id is None:
-        return
-    if cfg.telegram_allowed_chat_ids and chat_id not in cfg.telegram_allowed_chat_ids:
-        logger.warning("Unauthorized callback from chat_id=%s", chat_id)
-        await query.answer("Non autorise.", show_alert=False)
-        return
-
-    match = ORDER_CALLBACK_PATTERN.match(query.data)
-    if not match:
-        await query.answer()
-        return
-    decision, pending_id_raw = match.group(1), match.group(2)
-    pending_id = int(pending_id_raw)
-
-    await query.answer()
-
-    result = await asyncio.to_thread(
-        orders.resolve_pending,
-        pending_id=pending_id,
-        chat_id=chat_id,
-        decision=decision,
-    )
-
-    final_text = (query.message.text or "") + "\n\n" + result.message
-    try:
-        await query.edit_message_text(text=final_text, reply_markup=None)
-    except Exception:
-        logger.exception(
-            "Failed to edit order confirmation message pending_id=%s", pending_id,
-        )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

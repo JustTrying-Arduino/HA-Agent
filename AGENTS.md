@@ -86,7 +86,4 @@ Regles:
 - [`docs/fonctionnel/reminders.md`](./docs/fonctionnel/reminders.md): rappels, scheduler, cron
 - [`docs/fonctionnel/tools.md`](./docs/fonctionnel/tools.md): enregistrement, exposition, limites et effets visibles des tools
 - [`docs/fonctionnel/sub-agents.md`](./docs/fonctionnel/sub-agents.md): boucles LLM imbriquees (sub-agents), `web_research`, contexte isole
-- [`docs/fonctionnel/veille-boursiere.md`](./docs/fonctionnel/veille-boursiere.md): veille boursiere via Degiro (close-only), cache market-hours-aware, bougie provisoire intraday, watchlist ISIN-first, strategies rebond (gate RSI + signal recovery) / swing
-- [`docs/fonctionnel/portefeuille.md`](./docs/fonctionnel/portefeuille.md): lecture portefeuille Degiro, skill `portfolio-advisor`, limitations close-only
-- [`docs/fonctionnel/ordres-degiro.md`](./docs/fonctionnel/ordres-degiro.md): passage et annulation d'ordres via Telegram (human-in-the-loop), garde-fous deterministes, kill switch `degiro_orders_enabled`
 - [`docs/fonctionnel/workspace-et-memoire.md`](./docs/fonctionnel/workspace-et-memoire.md): workspace persistant, skills, memoire durable

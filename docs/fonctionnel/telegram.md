@@ -22,7 +22,6 @@ Le bot envoie immédiatement un court message de type `En reflexion...` pour sig
 
 - recherche web;
 - récupération de page web;
-- analyse boursiere EOD;
 - exécution shell.
 - lecture ou commande Home Assistant.
 
@@ -53,22 +52,6 @@ Le backend ne tente pas de "réparer" un HTML libre ou arbitraire. Il applique l
 ## Messages vocaux
 
 Les messages audio sont transcrits avant passage dans la boucle agent. La transcription repose sur `audio.py`, qui est une utilité interne et non un tool exposé au LLM.
-
-## Envoi de photos
-
-En plus du texte, le bot peut pousser des images dans le chat. C'est utilisé par `degiro_chart` qui génère un PNG via QuickChart.io et appelle `telegram.send_photo(chat_id, url)` directement. Le helper réutilise le même retry transitoire que les envois texte. Le `Bot` est partagé via une variable module-level initialisée par `start_bot()`.
-
-## Boutons inline pour les ordres Degiro
-
-Le bot enregistre un `CallbackQueryHandler` sur le pattern `order:(ok|no):\d+` (cf. `start_bot()`). Les tools `degiro_propose_order` / `degiro_propose_cancel` appellent `telegram.send_order_confirmation(chat_id, pending_id, preview_text)` qui pousse un message avec deux boutons (`Confirmer` / `Annuler`) dont le `callback_data` encode l'id du pending et la décision.
-
-Au clic, `handle_order_callback`:
-
-1. vérifie que `chat_id` ∈ `cfg.telegram_allowed_chat_ids` (sinon refus silencieux côté utilisateur, log warning);
-2. délègue à `agent.orders.resolve_pending` via `asyncio.to_thread`. Cette fonction est l'**unique** point d'exécution réelle d'un ordre Degiro;
-3. édite le message d'origine pour afficher le résultat (`orderId=…`, `Annulé`, `Demande expirée`, ou trace d'erreur).
-
-Côté UX, les libellés de progression `degiro_propose_order`, `degiro_list_open_orders`, `degiro_propose_cancel` sont mappés dans `TOOL_STATUS_LABELS`. Voir `ordres-degiro.md` pour la mécanique complète et les garde-fous.
 
 ## Résilience réseau
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from agent import orders
 from agent.loop import run_agent
 from agent.reminders import get_due_reminders, mark_executed, purge_archived_reminders
 from agent.telegram import build_telegram_chunks, _run_telegram_request
@@ -69,31 +68,11 @@ async def process_due_reminders(bot):
             mark_executed(reminder, error=error)
 
 
-async def expire_pending_orders(bot):
-    expired = await asyncio.to_thread(orders.expire_due_pending)
-    for row in expired:
-        msg_id = row.get("telegram_message_id")
-        if msg_id is None:
-            continue
-        try:
-            await bot.edit_message_text(
-                chat_id=row["chat_id"],
-                message_id=msg_id,
-                text=(row.get("preview_text") or "") + "\n\n[Expire]",
-                reply_markup=None,
-            )
-        except Exception:
-            logger.exception(
-                "Failed to edit expired pending message id=%s", row["id"],
-            )
-
-
 async def run_scheduler(bot):
     while True:
         try:
             await process_due_reminders(bot)
             purge_archived_reminders()
-            await expire_pending_orders(bot)
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -67,14 +67,14 @@ Le flux de configuration suit cette chaîne:
 
 Le niveau de log global est piloté par `cfg.log_level` (option add-on). La politique des niveaux est :
 
-- **INFO** : événements métier observables en prod, une ligne par événement, faible volume. Toujours préfixés par `chat_id=X` quand un chat est concerné. Couvre : début et fin de run agent (`Agent run start` / `Agent run end` avec durée, nombre de tool calls et flag d'escalation), chaque appel et résultat de tool, escalation modèle, action Home Assistant effective (`HA service call`), login Degiro, message entrant et sortant Telegram, lifecycle du process.
-- **DEBUG** : détail technique pour diagnostiquer un cas précis. Une seule ligne par fait, sans redondance entre une vue brute et une vue extraite. Couvre : payload complet d'une requête et d'une réponse LLM (chacun en une ligne tronquée à `DEBUG_TEXT_LIMIT`), payload d'un appel HA, requêtes et caches HA, traces de validation Degiro réussies.
-- **WARNING** : erreurs récupérées qui dégradent silencieusement la qualité des résultats (ex. validation `price_history` ou `price_metadata` Degiro KO, `metadata fetch failed` côté market). Visibles en INFO sans monter à DEBUG.
+- **INFO** : événements métier observables en prod, une ligne par événement, faible volume. Toujours préfixés par `chat_id=X` quand un chat est concerné. Couvre : début et fin de run agent (`Agent run start` / `Agent run end` avec durée, nombre de tool calls et flag d'escalation), chaque appel et résultat de tool, escalation modèle, action Home Assistant effective (`HA service call`), message entrant et sortant Telegram, lifecycle du process.
+- **DEBUG** : détail technique pour diagnostiquer un cas précis. Une seule ligne par fait, sans redondance entre une vue brute et une vue extraite. Couvre : payload complet d'une requête et d'une réponse LLM (chacun en une ligne tronquée à `DEBUG_TEXT_LIMIT`), payload d'un appel HA, requêtes et caches HA.
+- **WARNING** : erreurs récupérées qui dégradent silencieusement la qualité des résultats. Visibles en INFO sans monter à DEBUG.
 
 Règles à préserver lors d'évolutions :
 
 - pas de doublon entre INFO et DEBUG sur un même événement, DEBUG ajoute du contexte sur une ligne séparée et clairement nommée;
-- toute action effective sur un système externe (HA, Degiro en écriture si un jour ouvert) reste en INFO;
+- toute action effective sur un système externe (HA) reste en INFO;
 - une erreur rattrapée silencieusement reste au minimum en WARNING.
 
 ## Hors périmètre actuel

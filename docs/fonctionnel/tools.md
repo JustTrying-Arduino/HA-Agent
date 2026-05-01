@@ -27,9 +27,6 @@ Règles à préserver:
 - fichiers: lecture, écriture, édition simple, listing;
 - web: recherche et récupération de contenu;
 - recherche déléguée: `web_research` — lance des sub-agents de recherche en parallèle (boucle isolée web_search/web_fetch/read_file), retourne une synthèse consolidée;
-- market: `market_watch` — screener par stratégie (rebound / swing) sur une watchlist, alimenté par Degiro (close-only);
-- degiro lecture: `degiro_portfolio`, `degiro_search`, `degiro_quote`, `degiro_candles`, `degiro_indicators`, `degiro_chart` — lecture seule. `degiro_chart` produit un PNG via QuickChart.io et le pousse dans le chat Telegram en `send_photo`;
-- degiro ordres (gating `cfg.degiro_orders_enabled`): `degiro_propose_order`, `degiro_propose_cancel`, `degiro_list_open_orders` — flow human-in-the-loop, l'exécution Degiro a lieu uniquement via le callback inline keyboard Telegram, pas dans la boucle LLM. Voir `ordres-degiro.md`;
 - home assistant: recherche d'entités exposées, lecture d'état et appel de services via Supervisor;
 - reminders: création et gestion de rappels;
 - routage: `escalate_model` pour la bascule de modèle.
@@ -39,9 +36,6 @@ Règles à préserver:
 ## Exposition conditionnelle
 
 - `web_search` n'est exposé que si `cfg.brave_api_key` est configurée.
-- les tools de la famille `degiro_*` ne sont exposés que si `cfg.degiro_username` et `cfg.degiro_password` sont configurés. Le provider gère le login initial et le relogin auto via fingerprint HMAC-SHA256 (voir `veille-boursiere.md`).
-- les tools d'ordres (`degiro_propose_order`, `degiro_propose_cancel`, `degiro_list_open_orders`) ne sont enregistrés que si `cfg.degiro_orders_enabled` est `true`. Désactiver le flag retire les tools du schéma exposé au LLM (voir `ordres-degiro.md`).
-- `market_watch` dépend du même prérequis Degiro, et lit la watchlist workspace `skills/market-watch/watchlist.json` (format ISIN-first).
 - les tools Home Assistant ne sont exposés que si `cfg.supervisor_token` est configuré.
 - les tools Home Assistant limitent l'accès aux entités portant le label `cfg.ha_expose_label`.
 - `escalate_model` n'est exposé que tant que le run est encore sur le modèle léger.
@@ -53,10 +47,6 @@ Règles à préserver:
 - récupération web tronquée à 20 000 caractères.
 - `web_research`: jusqu'à 5 sous-tâches par appel, max 3 sub-agents concurrents (semaphore), timeout 180 s par sub-agent. Voir `sub-agents.md`.
 - cache de résolution du label Home Assistant: 60 secondes.
-- veille boursière: indicateurs close-only (Degiro ne fournit ni volume ni OHL). Les confirmations volume ne sont pas disponibles — croiser avec `web_search` / `web_fetch` si nécessaire.
-- `degiro_chart`: rendu via QuickChart.io (POST `/chart/create`, dépendance externe). Downsampling uniforme à ≤ 250 points (limite anonyme du service). Premier et dernier point préservés; perte ≤ 4 % sur `1y-1d` / `5y-1w`. Renvoie un message texte court; l'image arrive séparément en `send_photo` Telegram.
-- famille `degiro_*` lecture: aucune contrainte côté tool (les limites sont celles du backend Degiro et de la veille close-only).
-- ordres Degiro: `degiro_propose_order` n'exécute jamais l'ordre. La proposition est persistée dans `pending_actions`, l'exécution réelle a lieu dans le callback Telegram après confirmation humaine, encadrée par TTL 5 min, plafond 1500 EUR sur BUY, quota 4 BUY confirmés / fenêtre glissante de 24h, kill switch `degiro_orders_enabled`. Voir `ordres-degiro.md`.
 
 Le projet ne sandboxe pas les tools à l'intérieur du conteneur. Cette liberté est intentionnelle et fait partie du contrat d'usage du projet.
 

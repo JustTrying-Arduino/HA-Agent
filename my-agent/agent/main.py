@@ -39,16 +39,9 @@ def main():
     # Import tools to trigger registration
     import agent.tools.exec  # noqa: F401
     import agent.tools.files  # noqa: F401
-    import agent.tools.market  # noqa: F401
     import agent.tools.reminders  # noqa: F401
     import agent.tools.router  # noqa: F401
-    if cfg.degiro_username and cfg.degiro_password:
-        import agent.tools.degiro  # noqa: F401
-    if cfg.brave_api_key:
-        import agent.tools.web  # noqa: F401
-    else:
-        # Still register web_fetch even without Brave key
-        import agent.tools.web  # noqa: F401
+    import agent.tools.web  # noqa: F401
     import agent.tools.research  # noqa: F401
     if cfg.supervisor_token:
         import agent.tools.homeassistant  # noqa: F401
